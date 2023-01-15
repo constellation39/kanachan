@@ -904,6 +904,21 @@ void convert(std::filesystem::path const &ph) {
 
 } // namespace *unnamed*
 
+void recursion(const std::filesystem::path ph) {
+  auto const end = std::filesystem::directory_iterator();
+  for (std::filesystem::directory_iterator iter(ph); iter != end; ++iter) {
+		if (iter->is_directory()) {
+			recursion(iter->path());
+		} else if (iter->is_regular_file()) {
+        try {
+          convert(iter->path());
+        } catch(std::exception &e) {
+          std::cerr << "file: " << iter->path() << '\n' << e.what() << "\n";
+        }
+      }
+  }
+}
+
 int main(int const argc, char const *argv[]) {
   if (argc < 2) {
     KANACHAN_THROW<std::runtime_error>(_1) << "argc = " << argc;
@@ -919,14 +934,8 @@ int main(int const argc, char const *argv[]) {
       << ph << ": not a directory.";
   }
 
-  {
-    auto const end = std::filesystem::directory_iterator();
-    for (std::filesystem::directory_iterator iter(ph); iter != end; ++iter) {
-      if (iter->is_regular_file()) {
-        convert(iter->path());
-      }
-    }
-  }
+  recursion(ph);
 
   return EXIT_SUCCESS;
 }
+
