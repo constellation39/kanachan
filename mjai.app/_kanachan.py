@@ -2010,7 +2010,7 @@ class Kanachan:
             if message['type'] == 'hello':
                 if len(messages) > 1:
                     raise RuntimeError('A multi-line `hello` message.')
-                self.__on_hello()
+                self.__on_hello(messages)
                 messages.pop(0)
                 continue
 

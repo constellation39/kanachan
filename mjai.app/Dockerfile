@@ -22,13 +22,13 @@ RUN apt-get update && \
       zlib1g-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     locale-gen en_US.UTF-8 ja_JP.UTF-8 && \
-    (mkdir -p /opt/src && cd /opt/src && curl -fLsSo Python-3.10.7.tar.xz 'https://www.python.org/ftp/python/3.10.7/Python-3.10.7.tar.xz') && \
-    (cd /opt/src && tar xf Python-3.10.7.tar.xz) && \
-    rm /opt/src/Python-3.10.7.tar.xz && \
-    (cd /opt/src/Python-3.10.7 && ./configure --enable-optimizations --with-lto) && \
-    (cd /opt/src/Python-3.10.7 && make -j) && \
-    (cd /opt/src/Python-3.10.7 && make install) && \
-    rm -rf /opt/src/Python-3.10.7 && \
+    (mkdir -p /opt/src && cd /opt/src && curl -fLsSo Python-3.8.13.tar.xz 'https://www.python.org/ftp/python/3.8.13/Python-3.8.13.tar.xz') && \
+    (cd /opt/src && tar xf Python-3.8.13.tar.xz) && \
+    rm /opt/src/Python-3.8.13.tar.xz && \
+    (cd /opt/src/Python-3.8.13 && ./configure --enable-optimizations --with-lto) && \
+    (cd /opt/src/Python-3.8.13 && make -j) && \
+    (cd /opt/src/Python-3.8.13 && make install) && \
+    rm -rf /opt/src/Python-3.8.13 && \
     echo 'using python : : /usr/local/bin/python3 ;' >/root/user-config.jam && \
     (mkdir -p /opt/src && cd /opt/src && curl -fLsSo protobuf-cpp-3.21.7.tar.gz 'https://github.com/protocolbuffers/protobuf/releases/download/v21.7/protobuf-cpp-3.21.7.tar.gz') && \
     (cd /opt/src && tar xf protobuf-cpp-3.21.7.tar.gz) && \

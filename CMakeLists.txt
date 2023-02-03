@@ -98,6 +98,8 @@ find_package(Boost
   REQUIRED
   COMPONENTS stacktrace_backtrace python)
 
+set (CMAKE_CXX_LINK_EXECUTABLE "${CMAKE_CXX_LINK_EXECUTABLE} -ldl")
+
 add_compile_definitions(BOOST_STACKTRACE_USE_BACKTRACE)
 
 add_subdirectory(src)

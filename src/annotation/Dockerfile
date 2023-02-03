@@ -22,4 +22,4 @@ RUN pushd src/common && \
     VERBOSE=1 make -j annotate && \
     popd
 
-ENTRYPOINT ["build/src/annotation/annotate", "/data"]
+# ENTRYPOINT ["build/src/annotation/annotate", "/data"]
