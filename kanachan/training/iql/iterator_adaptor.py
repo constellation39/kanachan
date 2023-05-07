@@ -9,11 +9,13 @@ from kanachan.training.constants import (
     NUM_TYPES_OF_SPARSE_FEATURES, MAX_NUM_ACTIVE_SPARSE_FEATURES,
     NUM_NUMERIC_FEATURES, NUM_TYPES_OF_PROGRESSION_FEATURES,
     MAX_LENGTH_OF_PROGRESSION_FEATURES, NUM_TYPES_OF_ACTIONS,
-    MAX_NUM_ACTION_CANDIDATES)
+    MAX_NUM_ACTION_CANDIDATES
+)
+from kanachan.training.ilql.reward_function import RewardFunction
 
 
 class IteratorAdaptor(object):
-    def __init__(self, path: Path, reward_scale: float) -> None:
+    def __init__(self, path: Path, get_reward: RewardFunction) -> None:
         if path.suffix == '.gz':
             self.__fp = gzip.open(path, mode='rt', encoding='UTF-8')
         elif path.suffix == '.bz2':
@@ -21,13 +23,13 @@ class IteratorAdaptor(object):
         else:
             self.__fp = open(path, encoding='UTF-8')
 
-        self.__reward_scale = reward_scale
+        self.__get_reward = get_reward
 
         if get_worker_info() is not None:
             try:
-                for i in range(get_worker_info().id):
+                for _ in range(get_worker_info().id):
                     next(self.__fp)
-            except StopIteration as e:
+            except StopIteration as _:
                 pass
 
     def __del__(self) -> None:
@@ -41,10 +43,10 @@ class IteratorAdaptor(object):
 
         sparse = [int(x) for x in sparse.split(',')]
         if len(sparse) > MAX_NUM_ACTIVE_SPARSE_FEATURES:
-            raise RuntimeError(f'{uuid}: {len(sparse)}')
+            raise RuntimeError(f'{len(sparse)} > {MAX_NUM_ACTIVE_SPARSE_FEATURES}')
         for i in sparse:
             if i >= NUM_TYPES_OF_SPARSE_FEATURES:
-                raise RuntimeError(f'{uuid}: {i}')
+                raise RuntimeError(f'{i} >= {NUM_TYPES_OF_SPARSE_FEATURES}')
         for i in range(len(sparse), MAX_NUM_ACTIVE_SPARSE_FEATURES):
             # padding
             sparse.append(NUM_TYPES_OF_SPARSE_FEATURES)
@@ -52,16 +54,16 @@ class IteratorAdaptor(object):
 
         numeric = [int(x) for x in numeric.split(',')]
         if len(numeric) != NUM_NUMERIC_FEATURES:
-            raise RuntimeError(uuid)
+            raise RuntimeError(f'{len(numeric)} != {NUM_NUMERIC_FEATURES}')
         numeric[2:] = [x / 10000.0 for x in numeric[2:]]
         numeric = torch.tensor(numeric, device='cpu', dtype=torch.float32)
 
         progression = [int(x) for x in progression.split(',')]
         if len(progression) > MAX_LENGTH_OF_PROGRESSION_FEATURES:
-            raise RuntimeError(f'{uuid}: {len(progression)}')
+            raise RuntimeError(f'{len(progression)} > {MAX_LENGTH_OF_PROGRESSION_FEATURES}')
         for p in progression:
             if p >= NUM_TYPES_OF_PROGRESSION_FEATURES:
-                raise RuntimeError(f'{uuid}: {p}')
+                raise RuntimeError(f'{p} >= {NUM_TYPES_OF_PROGRESSION_FEATURES}')
         for i in range(len(progression), MAX_LENGTH_OF_PROGRESSION_FEATURES):
             # padding
             progression.append(NUM_TYPES_OF_PROGRESSION_FEATURES)
@@ -69,10 +71,10 @@ class IteratorAdaptor(object):
 
         candidates = [int(x) for x in candidates.split(',')]
         if len(candidates) + 1 > MAX_NUM_ACTION_CANDIDATES:
-            raise RuntimeError(f'{uuid}: {len(candidates)}')
+            raise RuntimeError(f'{len(candidates)} >= {MAX_NUM_ACTION_CANDIDATES}')
         for a in candidates:
             if a >= NUM_TYPES_OF_ACTIONS:
-                raise RuntimeError(f'{uuid}: {a}')
+                raise RuntimeError(f'{a} >= {NUM_TYPES_OF_ACTIONS}')
         # <VALUE>
         candidates.append(NUM_TYPES_OF_ACTIONS)
         for i in range(len(candidates), MAX_NUM_ACTION_CANDIDATES):
@@ -83,16 +85,15 @@ class IteratorAdaptor(object):
         index = int(index)
         index = torch.tensor(index, device='cpu', dtype=torch.int64)
 
-        if len(columns) == 10:
-            next_sparse, next_numeric, next_progression, next_candidates, delta_round_score = columns[5:]
-            delta_round_score = int(delta_round_score)
+        if len(columns) == 9:
+            next_sparse, next_numeric, next_progression, next_candidates = columns[5:]
 
             next_sparse = [int(x) for x in next_sparse.split(',')]
             if len(next_sparse) > MAX_NUM_ACTIVE_SPARSE_FEATURES:
-                raise RuntimeError(f'{uuid}: {len(next_sparse)}')
+                raise RuntimeError(f'{len(next_sparse)} > {MAX_NUM_ACTIVE_SPARSE_FEATURES}')
             for i in next_sparse:
                 if i >= NUM_TYPES_OF_SPARSE_FEATURES:
-                    raise RuntimeError(f'{uuid}: {i}')
+                    raise RuntimeError(f'{i} >= {NUM_TYPES_OF_SPARSE_FEATURES}')
             for i in range(len(next_sparse), MAX_NUM_ACTIVE_SPARSE_FEATURES):
                 # padding
                 next_sparse.append(NUM_TYPES_OF_SPARSE_FEATURES)
@@ -101,17 +102,18 @@ class IteratorAdaptor(object):
 
             next_numeric = [int(x) for x in next_numeric.split(',')]
             if len(next_numeric) != NUM_NUMERIC_FEATURES:
-                raise RuntimeError(uuid)
+                raise RuntimeError(f'{len(next_numeric)} != {NUM_NUMERIC_FEATURES}')
             next_numeric[2:] = [x / 10000.0 for x in next_numeric[2:]]
             next_numeric = torch.tensor(
                 next_numeric, device='cpu', dtype=torch.float32)
 
             next_progression = [int(x) for x in next_progression.split(',')]
             if len(next_progression) > MAX_LENGTH_OF_PROGRESSION_FEATURES:
-                raise RuntimeError(f'{uuid}: {len(next_progression)}')
+                raise RuntimeError(
+                    f'{len(next_progression)} > {MAX_LENGTH_OF_PROGRESSION_FEATURES}')
             for p in next_progression:
                 if p >= NUM_TYPES_OF_PROGRESSION_FEATURES:
-                    raise RuntimeError(f'{uuid}: {p}')
+                    raise RuntimeError(f'{p} >= {NUM_TYPES_OF_PROGRESSION_FEATURES}')
             for i in range(len(next_progression), MAX_LENGTH_OF_PROGRESSION_FEATURES):
                 # padding
                 next_progression.append(NUM_TYPES_OF_PROGRESSION_FEATURES)
@@ -120,10 +122,10 @@ class IteratorAdaptor(object):
 
             next_candidates = [int(x) for x in next_candidates.split(',')]
             if len(next_candidates) + 1 > MAX_NUM_ACTION_CANDIDATES:
-                raise RuntimeError(f'{uuid}: {len(next_candidates)}')
+                raise RuntimeError(f'{len(next_candidates)} >= {MAX_NUM_ACTION_CANDIDATES}')
             for a in next_candidates:
                 if a >= NUM_TYPES_OF_ACTIONS:
-                    raise RuntimeError(f'{uuid}: {a}')
+                    raise RuntimeError(f'{a} >= {NUM_TYPES_OF_ACTIONS}')
             # <VALUE>
             next_candidates.append(NUM_TYPES_OF_ACTIONS)
             for i in range(len(next_candidates), MAX_NUM_ACTION_CANDIDATES):
@@ -132,28 +134,15 @@ class IteratorAdaptor(object):
             next_candidates = torch.tensor(
                 next_candidates, device='cpu', dtype=torch.int32)
 
-            reward = torch.tensor(0.0, device='cpu', dtype=torch.float32)
+            reward = self.__get_reward(sparse, numeric, progression, candidates, index, None, None)
+            reward = torch.tensor(reward, device='cpu', dtype=torch.float32)
 
             return (
                 sparse, numeric, progression, candidates, index,
                 next_sparse, next_numeric, next_progression, next_candidates,
                 reward)
-        elif len(columns) == 8:
-            delta_round_score, game_rank, game_score = [int(column) for column in columns[5:]]
-
-            if game_rank == 0:
-                reward = 125
-            elif game_rank == 1:
-                reward = 60
-            elif game_rank == 2:
-                reward = -5
-            elif game_rank == 3:
-                reward = -255
-            else:
-                raise RuntimeError(f'{uuid}:{game_rank}: An invalid game rank.')
-            reward += (game_score - 25000) // 1000
-            reward *= self.__reward_scale
-            reward = torch.tensor(reward, device='cpu', dtype=torch.float32)
+        elif len(columns) == 7:
+            game_rank, game_score = [int(column) for column in columns[5:]]
 
             dummy_sparse = [NUM_TYPES_OF_SPARSE_FEATURES] * MAX_NUM_ACTIVE_SPARSE_FEATURES
             dummy_sparse = torch.tensor(dummy_sparse, device='cpu', dtype=torch.int32)
@@ -173,6 +162,10 @@ class IteratorAdaptor(object):
             dummy_candidates = torch.tensor(
                 dummy_candidates, device='cpu', dtype=torch.int32)
 
+            reward = self.__get_reward(
+                sparse, numeric, progression, candidates, index, game_rank, game_score)
+            reward = torch.tensor(reward, device='cpu', dtype=torch.float32)
+
             return (
                 sparse, numeric, progression, candidates, index, dummy_sparse,
                 dummy_numeric, dummy_progression, dummy_candidates, reward)
@@ -186,9 +179,9 @@ class IteratorAdaptor(object):
         else:
             line = next(self.__fp)
             try:
-                assert(get_worker_info().num_workers >= 1)
-                for i in range(get_worker_info().num_workers - 1):
+                assert get_worker_info().num_workers >= 1
+                for _ in range(get_worker_info().num_workers - 1):
                     next(self.__fp)
-            except StopIteration as e:
+            except StopIteration as _:
                 pass
             return self.__parse_line(line)

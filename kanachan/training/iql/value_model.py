@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from collections import OrderedDict
 import torch
 from torch import nn
 from kanachan.training.constants import (
@@ -9,47 +10,47 @@ from kanachan.training.bert.encoder import Encoder
 
 class ValueDecoder(nn.Module):
     def __init__(
-            self, *, dimension: int, dim_final_feedforward: int,
-            activation_function: str, dropout: float, **kwargs) -> None:
+            self, *, dimension: int, dim_feedforward: int, activation_function: str, dropout: float,
+            num_layers: int, device: torch.device, dtype: torch.dtype) -> None:
+        if num_layers <= 0:
+            raise ValueError(num_layers)
+
         super(ValueDecoder, self).__init__()
 
-        # The final layer is position-wise feed-forward network.
-        self.semifinal_linear = nn.Linear(dimension, dim_final_feedforward)
-        if activation_function == 'relu':
-            self.semifinal_activation = nn.ReLU()
-        elif activation_function == 'gelu':
-            self.semifinal_activation = nn.GELU()
-        else:
-            raise ValueError(
-                f'{activation_function}: An invalid activation function.')
-        self.semifinal_dropout = nn.Dropout(p=dropout)
-        self.final_linear = nn.Linear(dim_final_feedforward, 1)
+        layers = OrderedDict()
+        for i in range(num_layers - 1):
+            layers[f'layer{i}'] = nn.Linear(
+                dimension if i == 0 else dim_feedforward, dim_feedforward,
+                device=device, dtype=dtype)
+            if activation_function == 'relu':
+                layers[f'activation{i}'] = nn.ReLU()
+            elif activation_function == 'gelu':
+                layers[f'activation{i}'] = nn.GELU()
+            else:
+                raise ValueError(activation_function)
+            layers[f'dropout{i}'] = nn.Dropout(p=dropout)
+        layers[f'layer{num_layers - 1}'] = nn.Linear(
+            dimension if num_layers == 1 else dim_feedforward, 1, device=device, dtype=dtype)
+        self.layers = nn.Sequential(layers)
 
-    def forward(self, x) -> torch.Tensor:
-        candidates, encode = x
+    def forward(self, candidates: torch.Tensor, encode: torch.Tensor) -> torch.Tensor:
+        assert candidates.dim() == 2
+        assert encode.dim() == 3
+        assert candidates.size(0) == encode.size(0)
 
-        new_candidates = candidates.clone().detach()
-        for i in range(new_candidates.size(0)):
-            for j in range(new_candidates.size(1)):
-                if new_candidates[i, j] == NUM_TYPES_OF_ACTIONS:
-                    break
-                if new_candidates[i, j] == NUM_TYPES_OF_ACTIONS + 1:
-                    new_candidates[i, j] = NUM_TYPES_OF_ACTIONS
-                    break
-
-        mask = (new_candidates == NUM_TYPES_OF_ACTIONS)
+        mask = (candidates == NUM_TYPES_OF_ACTIONS)
 
         encode = encode[:, -MAX_NUM_ACTION_CANDIDATES:]
-        decode = self.semifinal_linear(encode)
-        decode = self.semifinal_activation(decode)
-        decode = self.semifinal_dropout(decode)
-        prediction = self.final_linear(decode)
-        prediction = torch.squeeze(prediction, dim=2)
-        prediction = prediction[mask]
-        assert(prediction.dim() == 1)
-        assert(prediction.size(0) == new_candidates.size(0))
+        value: torch.Tensor = self.layers(encode)
+        value = torch.squeeze(value, dim=2)
+        value = value[mask]
+        assert value.dim() == 1
+        assert value.size(0) == candidates.size(0)
 
-        return prediction
+        # Set `V` of the terminal state to `0.0`.
+        value = torch.where(candidates[:, 0] != NUM_TYPES_OF_ACTIONS, value, 0.0)
+
+        return value
 
 
 class ValueModel(nn.Module):
@@ -58,7 +59,9 @@ class ValueModel(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, x) -> torch.Tensor:
-        encode = self.encoder(x)
-        prediction = self.decoder((x[3], encode))
+    def forward(
+            self, sparse: torch.Tensor, numeric: torch.Tensor, progression: torch.Tensor,
+            candidates: torch.Tensor) -> torch.Tensor:
+        encode = self.encoder(sparse, numeric, progression, candidates)
+        prediction = self.decoder(candidates, encode)
         return prediction

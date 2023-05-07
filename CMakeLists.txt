@@ -1,7 +1,18 @@
-cmake_minimum_required(VERSION 3.16.3)
+cmake_minimum_required(VERSION 3.25.0)
 project(kanachan)
 
 enable_testing()
+
+if (NOT DEFINED PYTHON_VERSION)
+  execute_process(
+    COMMAND bash "-c" "python --version | grep -Eo '^Python [[:digit:]]+\\.[[:digit:]]+' | grep -Eo '[[:digit:]]+\\.[[:digit:]]+'"
+    OUTPUT_VARIABLE PYTHON_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
+if (NOT DEFINED PYTHON_INCLUDE_PATH)
+  set(PYTHON_INCLUDE_PATH /usr/include/python${PYTHON_VERSION})
+endif()
 
 message("PYTHON_VERSION=${PYTHON_VERSION}")
 message("PYTHON_INCLUDE_PATH=${PYTHON_INCLUDE_PATH}")
@@ -22,7 +33,7 @@ endif()
 message("CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(KANACHAN_ENABLE_ASSERT ON CACHE BOOL "Enable assertions.")
+  set(KANACHAN_ENABLE_ASSERT ON)
 endif()
 if (KANACHAN_ENABLE_ASSERT)
   add_compile_definitions(KANACHAN_ENABLE_ASSERT)
@@ -45,7 +56,7 @@ message("KANACHAN_WITH_COVERAGE=${KANACHAN_WITH_COVERAGE}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   if (("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") OR ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"))
-    set(KANACHAN_WITH_ASAN ON CACHE BOOL "With AddressSanitizer.")
+    set(KANACHAN_WITH_ASAN ON)
   endif()
 endif()
 if (KANACHAN_WITH_ASAN)
@@ -57,7 +68,7 @@ message("KANACHAN_WITH_ASAN=${KANACHAN_WITH_ASAN}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   if (("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") OR ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"))
-    set(KANACHAN_WITH_UBSAN ON CACHE BOOL "With UndefinedBehaviorSanitizer.")
+    set(KANACHAN_WITH_UBSAN ON)
   endif()
 endif()
 if (KANACHAN_WITH_UBSAN)
@@ -93,7 +104,7 @@ else()
   set(Boost_USE_RELEASE_LIBS ON)
 endif()
 
-set(BOOST_ROOT /usr/local)
+set(BOOST_ROOT "$ENV{HOME}/.local")
 find_package(Boost
   REQUIRED
   COMPONENTS stacktrace_backtrace python)

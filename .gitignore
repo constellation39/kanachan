@@ -1,3 +1,6 @@
-/.local/
+/src/common/mahjongsoul.pb.h
+/src/common/mahjongsoul.pb.cc
+/build/
+/kanachan/simulation/_simulation.so
 /kanachan.egg-info/
 __pycache__
