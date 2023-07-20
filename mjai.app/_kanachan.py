@@ -1267,7 +1267,7 @@ class Kanachan:
 
         self.__round_state = RoundState()
 
-    def __on_hello(self) -> None:
+    def __on_hello(self, message: dict) -> dict:
         assert(message['type'] == 'hello')
 
         if 'can_act' not in message:
@@ -1278,8 +1278,10 @@ class Kanachan:
                 f'A `hello` message with an invalid `can_act` (can_act = {can_act}).')
 
         my_name = self.get_my_name()
-        response = json.dumps({'type': 'join', 'name': my_name, 'room': 'default'})
-        print(response, flush=True)
+        response = {'type': 'join', 'name': my_name, 'room': 'default'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
 
     def __on_start_game(self, message: dict) -> None:
         assert(message['type'] == 'start_game')
@@ -1298,8 +1300,10 @@ class Kanachan:
 
         self.__game_state.on_new_game()
 
-        response = json.dumps({'type': 'none'})
-        print(response, flush=True)
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
 
     def __on_start_kyoku(self, message: dict) -> None:
         assert(message['type'] == 'start_kyoku')
@@ -1400,7 +1404,11 @@ class Kanachan:
 
         self.__game_state.on_new_round(seat, scores)
         self.__round_state.on_new_round(chang, round_index, ben_chang, deposits, dora_indicator, hand)
-
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
+        
     def __respond(self, dapai: Optional[int], candidates: List[int]) -> None:
         seat = self.__game_state.get_seat()
 
@@ -1482,31 +1490,31 @@ class Kanachan:
             liqi = encode == 1
 
             if liqi:
-                response = json.dumps({'type': 'reach', 'actor': seat})
+                response = json.dumps({'type': 'reach', 'actor': seat, 'pai': tile, 'tsumogiri': moqi})
                 print(response, flush=True)
-                messages = sys.stdin.readline()
-                messages = json.loads(messages)
-                if len(messages) > 1:
-                    raise RuntimeError(
-                        'Too many messages starting with `reach`.')
-                message = messages[0]
-                if 'type' not in message:
-                    raise RuntimeError('A message without the `type` key.')
-                message_type = message['type']
-                if message_type != 'reach':
-                    raise RuntimeError(
-                        f'A `reach` message is expected, but got a `{message_type}` message')
-                if 'actor' not in message:
-                    raise RuntimeError(
-                        'A `reach` message without the `actor` key.')
-                actor = message['actor']
-                if actor != seat:
-                    raise RuntimeError(
-                        f'A `reach` message with an invalid actor (actor = {actor}).')
-                self.__round_state.on_liqi(seat)
+            #     messages = sys.stdin.readline()
+            #     messages = json.loads(messages)
+            #     if len(messages) > 1:
+            #         raise RuntimeError(
+            #             'Too many messages starting with `reach`.')
+            #     message = messages[0]
+            #     if 'type' not in message:
+            #         raise RuntimeError('A message without the `type` key.')
+            #     message_type = message['type']
+            #     if message_type != 'reach':
+            #         raise RuntimeError(
+            #             f'A `reach` message is expected, but got a `{message_type}` message')
+            #     if 'actor' not in message:
+            #         raise RuntimeError(
+            #             'A `reach` message without the `actor` key.')
+            #     actor = message['actor']
+            #     if actor != seat:
+            #         raise RuntimeError(
+            #             f'A `reach` message with an invalid actor (actor = {actor}).')
+            #     self.__round_state.on_liqi(seat)
 
-            response = json.dumps({'type': 'dahai', 'actor': seat, 'pai': tile, 'tsumogiri': moqi})
-            print(response, flush=True)
+            # response = json.dumps({'type': 'dahai', 'actor': seat, 'pai': tile, 'tsumogiri': moqi})
+            # print(response, flush=True)
             return
 
         if 148 <= decision and decision <= 181:
@@ -1990,6 +1998,16 @@ class Kanachan:
 
         response = json.dumps({'type': 'none'})
         print(response, flush=True)
+
+    def action(self, message:dict) -> dict:
+        if 'type' not in message:
+                raise RuntimeError(f'A message (message = {message}) without the `type` key.')
+        if message['type'] == 'hello':
+            return self.__on_hello(message)
+        if message['type'] == 'start_game':
+            return self.__on_start_game(message)
+
+        pass
 
     def run(self) -> None:
         messages = []
