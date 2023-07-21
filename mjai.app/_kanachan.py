@@ -1278,12 +1278,13 @@ class Kanachan:
                 f'A `hello` message with an invalid `can_act` (can_act = {can_act}).')
 
         my_name = self.get_my_name()
+        
         response = {'type': 'join', 'name': my_name, 'room': 'default'}
         response_json = json.dumps(response)
         print(response_json, flush=True)
         return response
 
-    def __on_start_game(self, message: dict) -> None:
+    def __on_start_game(self, message: dict) -> dict:
         assert(message['type'] == 'start_game')
 
         # 2022/10/06 時点でのAI雀荘の実装では， `start_game` メッセージに
@@ -1305,7 +1306,7 @@ class Kanachan:
         print(response_json, flush=True)
         return response
 
-    def __on_start_kyoku(self, message: dict) -> None:
+    def __on_start_kyoku(self, message: dict) -> dict:
         assert(message['type'] == 'start_kyoku')
 
         if 'bakaze' not in message:
@@ -1404,12 +1405,13 @@ class Kanachan:
 
         self.__game_state.on_new_round(seat, scores)
         self.__round_state.on_new_round(chang, round_index, ben_chang, deposits, dora_indicator, hand)
+
         response = {'type': 'none'}
         response_json = json.dumps(response)
         print(response_json, flush=True)
         return response
         
-    def __respond(self, dapai: Optional[int], candidates: List[int]) -> None:
+    def __respond(self, dapai: Optional[int], candidates: List[int]) -> dict:
         seat = self.__game_state.get_seat()
 
         sparse = []
@@ -1490,8 +1492,9 @@ class Kanachan:
             liqi = encode == 1
 
             if liqi:
-                response = json.dumps({'type': 'reach', 'actor': seat, 'pai': tile, 'tsumogiri': moqi})
-                print(response, flush=True)
+                response = {'type': 'reach', 'actor': seat, 'pai': tile, 'tsumogiri': moqi}
+                response_json = json.dumps(response)
+                print(response_json, flush=True)
             #     messages = sys.stdin.readline()
             #     messages = json.loads(messages)
             #     if len(messages) > 1:
@@ -1515,37 +1518,42 @@ class Kanachan:
 
             # response = json.dumps({'type': 'dahai', 'actor': seat, 'pai': tile, 'tsumogiri': moqi})
             # print(response, flush=True)
-            return
+            return response
 
         if 148 <= decision and decision <= 181:
             angang = _NUM2ANGANG[decision - 148]
-            response = json.dumps({'type': 'ankan', 'actor': seat, 'consumed': angang})
-            print(response, flush=True)
-            return
+            response = {'type': 'ankan', 'actor': seat, 'consumed': angang}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if 182 <= decision and decision <= 218:
             tile, consumed = _NUM2JIAGANG[decision - 182]
-            response = json.dumps({'type': 'kakan', 'actor': seat, 'pai': tile, 'consumed': consumed})
-            print(response, flush=True)
-            return
+            response = {'type': 'kakan', 'actor': seat, 'pai': tile, 'consumed': consumed}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if decision == 219:
             hupai = self.__round_state.get_zimo_tile()
             if hupai is None:
                 raise RuntimeError('Trying zimohu without any zimo tile.')
             hupai = _NUM2TILE[hupai]
-            response = json.dumps({'type': 'hora', 'actor': seat, 'target': seat, 'pai': hupai})
-            print(response, flush=True)
-            return
+            response = {'type': 'hora', 'actor': seat, 'target': seat, 'pai': hupai}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if decision == 220:
-            response = json.dumps({'type': 'ryukyoku'})
-            print(response, flush=True)
-            return
+            response = {'type': 'ryukyoku'}
+            response_json = json.dumps(response_json)
+            print(response_json, flush=True)
+            return response
 
         if decision == 221:
-            response = json.dumps({'type': 'none'})
-            print(response, flush=True)
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
             in_liqi = self.__round_state.is_in_liqi()
             for i in (543, 544, 545):
                 if i in candidates:
@@ -1553,13 +1561,14 @@ class Kanachan:
                     # この結果，フリテンが発生する．
                     self.__round_state.set_zhenting(2 if in_liqi else 1)
                     break
-            return
+            return response
 
         if 222 <= decision and decision <= 311:
             tile, consumed = _NUM2CHI[decision - 222]
-            response = json.dumps({'type': 'chi', 'actor': seat, 'target': (seat + 3) % 4, 'pai': tile, 'consumed': consumed})
-            print(response, flush=True)
-            return
+            response = {'type': 'chi', 'actor': seat, 'target': (seat + 3) % 4, 'pai': tile, 'consumed': consumed}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if 312 <= decision and decision <= 431:
             encode = decision - 312
@@ -1567,9 +1576,10 @@ class Kanachan:
             target = (seat + relseat + 1) % 4
             encode = encode % 40
             tile, consumed = _NUM2PENG[encode]
-            response = json.dumps({'type': 'pon', 'actor': seat, 'target': target, 'pai': tile, 'consumed': consumed})
-            print(response, flush=True)
-            return
+            response = {'type': 'pon', 'actor': seat, 'target': target, 'pai': tile, 'consumed': consumed}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if 432 <= decision and decision <= 542:
             encode = decision - 432
@@ -1577,9 +1587,10 @@ class Kanachan:
             target = (seat + relseat + 1) % 4
             encode = encode % 37
             tile, consumed = _NUM2DAMINGGANG[encode]
-            response = json.dumps({'type': 'daiminkan', 'actor': seat, 'target': target, 'pai': tile, 'consumed': consumed})
-            print(response, flush=True)
-            return
+            response = {'type': 'daiminkan', 'actor': seat, 'target': target, 'pai': tile, 'consumed': consumed}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if 543 <= decision and decision <= 545:
             relseat = decision - 543
@@ -1588,13 +1599,14 @@ class Kanachan:
             if hupai is None:
                 raise RuntimeError('Trying rong without any dapai.')
             hupai = _NUM2TILE[hupai]
-            response = json.dumps({'type': 'hora', 'actor': seat, 'target': target, 'pai': hupai})
-            print(response, flush=True)
-            return
+            response = {'type': 'hora', 'actor': seat, 'target': target, 'pai': hupai}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         raise RuntimeError(f'An invalid decision (decision = {decision}).')
 
-    def __on_zimo(self, message: dict) -> None:
+    def __on_zimo(self, message: dict) -> dict:
         assert(message['type'] == 'tsumo')
 
         seat = self.__game_state.get_seat()
@@ -1614,11 +1626,14 @@ class Kanachan:
         my_score = self.__game_state.get_player_score(seat)
 
         if not mine:
-            # TODO: https://github.com/smly/mjai.app/discussions/11
-            #if tile != '?':
-            #    raise RuntimeError(
-            #        f'An inconsistent `tsumo` message (seat = {seat}, actor = {actor}, pai = {tile}).')
+            if tile != '?':
+               raise RuntimeError(
+                   f'An inconsistent `tsumo` message (seat = {seat}, actor = {actor}, pai = {tile}).')
             self.__round_state.on_zimo(seat, mine, None, my_score)
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
         else:
             if tile not in _TILE2NUM:
                 raise RuntimeError(
@@ -1629,9 +1644,9 @@ class Kanachan:
                 raise RuntimeError(candidates)
             if len(candidates) == 0:
                 raise RuntimeError('The length of `candidates` is equal to 0.')
-            self.__respond(None, candidates)
+            return self.__respond(None, candidates)
 
-    def __on_dapai(self, message: dict) -> None:
+    def __on_dapai(self, message: dict) -> dict:
         assert(message['type'] == 'dahai')
 
         seat = self.__game_state.get_seat()
@@ -1661,18 +1676,24 @@ class Kanachan:
             # 自身の打牌に対してやることは何もない．
             if candidates is not None:
                 raise RuntimeError(candidates)
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if candidates is None:
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if not isinstance(candidates, list):
             raise RuntimeError(candidates)
         if len(candidates) < 2:
             raise RuntimeError(candidates)
-        self.__respond(tile, candidates)
+        return self.__respond(tile, candidates)
 
-    def __on_chi(self, message: dict) -> None:
+    def __on_chi(self, message: dict) -> dict:
         assert(message['type'] == 'chi')
 
         if 'actor' not in message:
@@ -1718,7 +1739,10 @@ class Kanachan:
         if candidates is None:
             if mine:
                 raise RuntimeError('TODO: (A suitable error message)')
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if not isinstance(candidates, list):
             raise RuntimeError(candidates)
@@ -1726,9 +1750,9 @@ class Kanachan:
             raise RuntimeError('TODO: (A suitable error message)')
         if not mine:
             raise RuntimeError('TODO: (A suitable error message)')
-        self.__respond(None, candidates)
+        return self.__respond(None, candidates)
 
-    def __on_peng(self, message: dict) -> None:
+    def __on_peng(self, message: dict) -> dict:
         assert(message['type'] == 'pon')
 
         if 'actor' not in message:
@@ -1775,7 +1799,10 @@ class Kanachan:
         if candidates is None:
             if mine:
                 raise RuntimeError('TODO: (A suitable error message)')
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if not isinstance(candidates, list):
             raise RuntimeError(candidates)
@@ -1783,9 +1810,9 @@ class Kanachan:
             raise RuntimeError('TODO: (A suitable error message)')
         if not mine:
             raise RuntimeError('TODO: (A suitable error message)')
-        self.__respond(None, candidates)
+        return self.__respond(None, candidates)
 
-    def __on_daminggang(self, message: dict) -> None:
+    def __on_daminggang(self, message: dict) -> dict:
         assert(message['type'] == 'daiminkan')
 
         if 'actor' not in message:
@@ -1830,8 +1857,12 @@ class Kanachan:
         daminggang = _DAMINGGANG2NUM[daminggang]
 
         self.__round_state.on_daminggang(mine, actor, relseat, daminggang)
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
 
-    def __on_angang(self, message: dict) -> None:
+    def __on_angang(self, message: dict) -> dict:
         assert(message['type'] == 'ankan')
 
         seat = self.__game_state.get_seat()
@@ -1858,10 +1889,16 @@ class Kanachan:
         if mine:
             if candidates is not None:
                 raise RuntimeError(candidates)
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if candidates is None:
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if not isinstance(candidates, list):
             raise RuntimeError(candidates)
@@ -1869,9 +1906,9 @@ class Kanachan:
             raise RuntimeError(len(candidates))
         # 国士無双の槍槓の可能性があるため，暗槓は打牌とみなす．
         dapai = _TILE2NUM[consumed[0]]
-        self.__respond(dapai, candidates)
+        return self.__respond(dapai, candidates)
 
-    def __on_jiagang(self, message: dict) -> None:
+    def __on_jiagang(self, message: dict) -> dict:
         assert(message['type'] == 'kakan')
 
         seat = self.__game_state.get_seat()
@@ -1900,18 +1937,24 @@ class Kanachan:
         if mine:
             if candidates is not None:
                 raise RuntimeError(candidates)
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if candidates is None:
-            return
+            response = {'type': 'none'}
+            response_json = json.dumps(response)
+            print(response_json, flush=True)
+            return response
 
         if not isinstance(candidates, list):
             raise RuntimeError(candidates)
         if len(candidates) != 2:
             raise RuntimeError(len(candidates))
-        self.__respond(tile, candidates)
+        return self.__respond(tile, candidates)
 
-    def __on_liqi(self, message: dict) -> None:
+    def __on_liqi(self, message: dict) -> dict:
         assert(message['type'] == 'reach')
 
         if 'actor' not in message:
@@ -1923,7 +1966,27 @@ class Kanachan:
 
         self.__round_state.on_liqi(actor)
 
-    def __on_liqi_acceptance(self, message: dict) -> None:
+        if 'pai' not in message:
+            raise RuntimeError('A `reach` message without the `pai` key.')
+        
+        if 'tsumogiri' not in message:
+            raise RuntimeError('A `reach` message without the `tsumogiri` key.')
+
+        seat = self.__game_state.get_seat()
+
+        if actor == seat:
+            if tile not in _TILE2NUM:
+                raise RuntimeError(
+                    f'A `reach` message with an invalid `pai` (pai = {tile}).')
+            response = {'type': 'dahai', 'actor': seat, 'pai': tile, 'tsumogiri': moqi}
+        else: 
+            response = {'type': 'none'}
+
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
+
+    def __on_liqi_acceptance(self, message: dict) -> dict:
         assert(message['type'] == 'reach_accepted')
 
         if 'actor' not in message:
@@ -1938,6 +2001,11 @@ class Kanachan:
         self.__game_state.on_liqi_acceptance(actor)
         self.__round_state.on_liqi_acceptance(mine, actor)
 
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
+
     def __on_new_dora(self, message: dict) -> None:
         assert(message['type'] == 'dora')
 
@@ -1951,6 +2019,11 @@ class Kanachan:
         dora_indicator = _TILE2NUM[dora_indicator]
 
         self.__round_state.on_new_dora(dora_indicator)
+
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
 
     def __on_hulu(self, message: dict) -> None:
         assert(message['type'] == 'hora')
@@ -1976,6 +2049,11 @@ class Kanachan:
             raise RuntimeError(
                 f'A `hora` message with an invalid `pai` (pai = {tile}).')
 
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
+
     def __on_luju(self, message: dict) -> None:
         assert(message['type'] == 'ryukyoku')
 
@@ -1987,27 +2065,83 @@ class Kanachan:
             raise RuntimeError(
                 f'An inconsistent `ryukyoku` message (can_act = {can_act}).')
 
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
+
     def __on_round_end(self, message: dict) -> None:
         assert(message['type'] == 'end_kyoku')
 
-        response = json.dumps({'type': 'none'})
-        print(response, flush=True)
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
 
     def __on_game_end(self, message: dict) -> None:
         assert(message['type'] == 'end_game')
 
-        response = json.dumps({'type': 'none'})
-        print(response, flush=True)
+        response = {'type': 'none'}
+        response_json = json.dumps(response)
+        print(response_json, flush=True)
+        return response
 
     def action(self, message:dict) -> dict:
         if 'type' not in message:
                 raise RuntimeError(f'A message (message = {message}) without the `type` key.')
+
         if message['type'] == 'hello':
             return self.__on_hello(message)
+
         if message['type'] == 'start_game':
             return self.__on_start_game(message)
 
-        pass
+        if message['type'] == 'start_kyoku':
+            return self.__on_start_kyoku(message)
+
+        if message['type'] == 'tsumo':
+            return self.__on_zimo(message)
+
+        if message['type'] == 'dahai':
+            return self.__on_dapai(message)
+
+        if message['type'] == 'chi':
+            return self.__on_chi(message)
+
+        if message['type'] == 'pon':
+            return self.__on_peng(message)
+        
+        if message['type'] == 'daiminkan':
+            return self.__on_daminggang(message)
+
+        if message['type'] == 'ankan':
+            return self.__on_angang(message)
+
+        if message['type'] == 'kakan':
+            return self.__on_jiagang(message)
+
+        if message['type'] == 'reach':
+            return self.__on_liqi(message)
+
+        if message['type'] == 'reach_accepted':
+            return self.__on_liqi_acceptance(message)
+
+        if message['type'] == 'dora':
+            return self.__on_new_dora(message)
+
+        if message['type'] == 'hora':
+            return self.__on_hulu(message)
+        
+        if message['type'] == 'ryukyoku':
+            return self.__on_luju(message)
+
+        if message['type'] == 'end_kyoku':
+            return self.__on_round_end(message)
+        
+        if message['type'] == 'end_game':
+            return self.__on_game_end(message)
+        
+        raise RuntimeError(message)
 
     def run(self) -> None:
         messages = []
