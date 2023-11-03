@@ -31,7 +31,7 @@ ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
 
 RUN /opt/kanachan-prerequisites/libbacktrace/install --debug
 
-RUN /opt/kanachan-prerequisites/cmake/install --debug
+RUN /opt/kanachan-prerequisites/cmake/install --version="3.27.0" --debug
 
 RUN /opt/kanachan-prerequisites/googletest/install --debug
 
