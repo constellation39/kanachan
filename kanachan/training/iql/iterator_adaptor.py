@@ -5,7 +5,7 @@ import gzip
 import bz2
 import torch
 from torch.utils.data import get_worker_info
-from kanachan.training.constants import (
+from kanachan.constants import (
     NUM_TYPES_OF_SPARSE_FEATURES, MAX_NUM_ACTIVE_SPARSE_FEATURES,
     NUM_NUMERIC_FEATURES, NUM_TYPES_OF_PROGRESSION_FEATURES,
     MAX_LENGTH_OF_PROGRESSION_FEATURES, NUM_TYPES_OF_ACTIONS,

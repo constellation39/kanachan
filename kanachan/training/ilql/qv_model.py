@@ -3,9 +3,7 @@ from collections import OrderedDict
 from typing import Tuple
 import torch
 from torch import nn
-from kanachan.training.constants import (
-    NUM_TYPES_OF_ACTIONS, MAX_NUM_ACTION_CANDIDATES, ENCODER_WIDTH
-)
+from kanachan.constants import NUM_TYPES_OF_ACTIONS, MAX_NUM_ACTION_CANDIDATES, ENCODER_WIDTH
 from kanachan.nn import Encoder
 from kanachan.training.iql.value_model import ValueDecoder
 

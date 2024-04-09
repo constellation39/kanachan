@@ -6,7 +6,7 @@ from typing import Tuple, Optional, List, Dict
 import torch
 from xiangting_calculator import XiangtingCalculator
 from hand_calculator import HandCalculator
-from kanachan.training.constants import (
+from kanachan.constants import (
     NUM_TYPES_OF_SPARSE_FEATURES, MAX_NUM_ACTIVE_SPARSE_FEATURES,
     NUM_TYPES_OF_PROGRESSION_FEATURES, MAX_LENGTH_OF_PROGRESSION_FEATURES,
     NUM_TYPES_OF_ACTIONS, MAX_NUM_ACTION_CANDIDATES)

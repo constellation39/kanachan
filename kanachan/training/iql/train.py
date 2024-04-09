@@ -23,7 +23,7 @@ from torch.distributed import (init_process_group, barrier, all_reduce)
 from torch.utils.tensorboard.writer import SummaryWriter
 from apex.optimizers import (FusedAdam, FusedSGD, FusedLAMB)
 import kanachan.training.iql.config # pylint: disable=unused-import
-from kanachan.training.constants import MAX_NUM_ACTION_CANDIDATES
+from kanachan.constants import MAX_NUM_ACTION_CANDIDATES
 from kanachan.training.common import Dataset, is_gradient_nan, get_gradient
 from kanachan.nn import Encoder
 from kanachan.training.iql.value_model import (ValueDecoder, ValueModel)
