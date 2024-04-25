@@ -924,11 +924,11 @@ def _main(config: DictConfig) -> None:
             encoder_snapshot_path, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
-        decoder_state_dict = torch.load(
-            decoder_snapshot_path, map_location="cpu"
-        )
-        decoder.load_state_dict(decoder_state_dict)
-        network.to(device=device, dtype=dtype)
+        # decoder_state_dict = torch.load(
+        #     decoder_snapshot_path, map_location="cpu"
+        # )
+        # decoder.load_state_dict(decoder_state_dict)
+        # network.to(device=device, dtype=dtype)
 
         if enable_target_network:
             assert target_encoder_snapshot_path is not None
@@ -948,10 +948,10 @@ def _main(config: DictConfig) -> None:
 
         network_to_save.to(device=device, dtype=dtype)
 
-        if optimizer_snapshot_path is not None:
-            optimizer.load_state_dict(
-                torch.load(optimizer_snapshot_path, map_location="cpu")
-            )
+        # if optimizer_snapshot_path is not None:
+        #     optimizer.load_state_dict(
+        #         torch.load(optimizer_snapshot_path, map_location="cpu")
+        #     )
 
         if scheduler is not None and scheduler_snapshot_path is not None:
             scheduler.load_state_dict(

@@ -16,7 +16,7 @@ For detailed installation instructions for the above prerequisite items, refer t
 After the installation of the prerequisite items, first [build the `cryolite/kanachan` Docker image](../../#cryolitekanachan-docker-image). Then, execute the following command with the top directory of the working tree of this repository as the current directory:
 
 ```sh
-kanachan$ docker build -f kanachan/training/cql/Dockerfile -t cryolite/kanachan.training.cql .
+kanachan$ docker build -f kanachan/Dockerfile -t cryolite/kanachan . && docker build -f kanachan/training/cql/Dockerfile -t cryolite/kanachan.training.cql .
 ```
 
 ## `train.py`
