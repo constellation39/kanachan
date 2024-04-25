@@ -31,7 +31,6 @@ class DataIterator:
             self.__fp = open(path, encoding="UTF-8")
 
         worker_info = get_worker_info()
-        num_skip_samples = 0
         if num_skip_samples > 0:
             is_primary_worker = worker_info is None or worker_info.id == 0
             with tqdm(
