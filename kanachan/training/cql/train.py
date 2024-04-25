@@ -540,16 +540,16 @@ def _main(config: DictConfig) -> None:
                 errmsg = f"{encoder_snapshot_path}: Not a file."
                 raise RuntimeError(errmsg)
 
-            decoder_snapshot_path = (
-                config.initial_model_prefix / f"decoder{infix}.pth"
-            )
-            assert decoder_snapshot_path is not None
-            if not decoder_snapshot_path.exists():
-                errmsg = f"{decoder_snapshot_path}: Does not exist."
-                raise RuntimeError(errmsg)
-            if not decoder_snapshot_path.is_file():
-                errmsg = f"{decoder_snapshot_path}: Not a file."
-                raise RuntimeError(errmsg)
+            # decoder_snapshot_path = (
+            #     config.initial_model_prefix / f"decoder{infix}.pth"
+            # )
+            # assert decoder_snapshot_path is not None
+            # if not decoder_snapshot_path.exists():
+            #     errmsg = f"{decoder_snapshot_path}: Does not exist."
+            #     raise RuntimeError(errmsg)
+            # if not decoder_snapshot_path.is_file():
+            #     errmsg = f"{decoder_snapshot_path}: Not a file."
+            #     raise RuntimeError(errmsg)
 
         optimizer_snapshot_path = (
             config.initial_model_prefix / f"optimizer{infix}.pth"
@@ -918,7 +918,7 @@ def _main(config: DictConfig) -> None:
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
         assert encoder_snapshot_path is not None
-        assert decoder_snapshot_path is not None
+        # assert decoder_snapshot_path is not None
 
         encoder_state_dict = torch.load(
             encoder_snapshot_path, map_location="cpu"
