@@ -712,7 +712,7 @@ std::uint_fast8_t PlayerState::getSeat() const
 
 std::uint_fast8_t PlayerState::getBenchang() const
 {
-  return chang_;
+  return ben_;
 }
 
 std::uint_fast8_t PlayerState::getNumLiqibangs() const
