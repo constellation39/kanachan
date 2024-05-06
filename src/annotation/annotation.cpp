@@ -726,7 +726,9 @@ void Annotation::printWithRoundResult(
   Kanachan::RoundProgress const &round_progress,
   std::array<std::uint_fast8_t, 7u> const round_result,
   std::array<std::int_fast32_t, 4u> const &round_delta_scores,
-  std::array<std::uint_fast8_t, 4u> const &round_ranks, std::ostream &os) const
+  std::uint_fast8_t const benchang,
+  std::uint_fast8_t const num_liqibangs,
+  std::ostream &os) const
 {
   if (round_result[0u] == UINT_FAST8_MAX) {
       KANACHAN_THROW<std::invalid_argument>("An invalid argument.");
@@ -736,11 +738,6 @@ void Annotation::printWithRoundResult(
       continue;
     }
     if (round_result[i] >= 29u) {
-      KANACHAN_THROW<std::invalid_argument>("An invalid argument.");
-    }
-  }
-  for (auto const &round_rank : round_ranks) {
-    if (round_rank >= 4u) {
       KANACHAN_THROW<std::invalid_argument>("An invalid argument.");
     }
   }
@@ -772,6 +769,8 @@ void Annotation::printWithRoundResult(
      << ',' << round_delta_scores[1u]
      << ',' << round_delta_scores[2u]
      << ',' << round_delta_scores[3u]
+     << ',' << static_cast<unsigned>(benchang)
+     << ',' << static_cast<unsigned>(num_liqibangs)
      << ',' << player_states_[0u].getInitialScore() + round_delta_scores[0u]
      << ',' << player_states_[1u].getInitialScore() + round_delta_scores[1u]
      << ',' << player_states_[2u].getInitialScore() + round_delta_scores[2u]

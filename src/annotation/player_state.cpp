@@ -710,6 +710,16 @@ std::uint_fast8_t PlayerState::getSeat() const
   return seat_;
 }
 
+std::uint_fast8_t PlayerState::getBenchang() const
+{
+  return chang_;
+}
+
+std::uint_fast8_t PlayerState::getNumLiqibangs() const
+{
+  return liqibang_;
+}
+
 std::uint_fast8_t PlayerState::getLeftTileCount() const
 {
   return count_;
