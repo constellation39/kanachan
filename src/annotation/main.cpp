@@ -717,6 +717,9 @@ void convert(std::filesystem::path const &ph) {
           prev_action_candidates, record);
       }
 
+      // 荒牌平局でゲームが終了したことを示すフラグ．
+      bool const game_end = record_count + 1u == record_size;
+
       std::array<std::int_fast32_t, 4u> scores{
         player_states[0u].getCurrentScore(),
         player_states[1u].getCurrentScore(),
@@ -732,6 +735,21 @@ void convert(std::filesystem::path const &ph) {
             scores[i] += score.delta_scores()[i];
           }
         }
+      }
+
+      if (game_end) {
+        // 荒牌平局でゲームが終了した場合，リーチ棒はトップ取りとなる．
+        std::uint_fast8_t const top_seat = [&]() -> std::uint_fast8_t
+        {
+          std::uint_fast8_t result = 0u;
+          for (std::uint_fast8_t i = 1u; i < 4u; ++i) {
+            if (scores[result] < scores[i]) {
+              result = i;
+            }
+          }
+          return result;
+        }();
+        scores[top_seat] += 1000u * player_states[0u].getNumLiqibangs();
       }
 
       std::array<std::int_fast32_t, 4u> const round_delta_scores{
@@ -777,8 +795,8 @@ void convert(std::filesystem::path const &ph) {
         }
       }
 
-      std::uint_fast8_t const next_benchang = player_states[0u].getBenchang() + 1u;
-      std::uint_fast8_t const next_num_liqibangs = player_states[0u].getNumLiqibangs();
+      std::uint_fast8_t const next_benchang = game_end ? 0u : player_states[0u].getBenchang() + 1u;
+      std::uint_fast8_t const next_num_liqibangs = game_end ? 0u : player_states[0u].getNumLiqibangs();
 
       for (std::size_t i = 0u; i < player_annotations.size(); ++i) {
         for (auto const &annotation : player_annotations[i]) {
