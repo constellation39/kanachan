@@ -462,23 +462,11 @@ void convert(std::filesystem::path const &ph) {
         record.scores()[3u] - player_states[3u].getInitialScore()
       };
 
-      RoundRankInput const round_rank_input{
-        std::make_pair(0u, record.scores()[0u]),
-        std::make_pair(1u, record.scores()[1u]),
-        std::make_pair(2u, record.scores()[2u]),
-        std::make_pair(3u, record.scores()[3u])
-      };
-      std::array<std::uint_fast8_t, 4u> const round_ranks{
-        getRoundRank_(0u, round_rank_input),
-        getRoundRank_(1u, round_rank_input),
-        getRoundRank_(2u, round_rank_input),
-        getRoundRank_(3u, round_rank_input)
-      };
-
       std::array<std::uint_fast8_t, 7u> results{
         UINT_FAST8_MAX, UINT_FAST8_MAX, UINT_FAST8_MAX, UINT_FAST8_MAX, UINT_FAST8_MAX,
         UINT_FAST8_MAX, UINT_FAST8_MAX
       };
+      bool hule_by_dealer = false;
       for (std::uint_fast8_t j = 0u; auto const &hule : record.hules()) {
         if (j >= 3u) {
           KANACHAN_THROW<std::logic_error>("A logic error.");
@@ -511,8 +499,21 @@ void convert(std::filesystem::path const &ph) {
           };
           results[j++] = codes[hule.seat()][prev_dapai_seat];
         }
+
+        if (hule.qinjia()) {
+          hule_by_dealer = true;
+        }
       }
       std::sort(results.begin(), results.end());
+
+      std::uint_fast8_t const next_benchang = [&]() -> std::uint_fast8_t
+      {
+        bool const game_end = record_count + 1u == record_size;
+        if (game_end) {
+          return 0u;
+        }
+        return hule_by_dealer ? player_states[0u].getBenchang() + 1u : 0u;
+      }();
 
       for (std::size_t i = 0u; i < player_annotations.size(); ++i) {
         for (auto const &annotation : player_annotations[i]) {
@@ -520,7 +521,7 @@ void convert(std::filesystem::path const &ph) {
             KANACHAN_THROW<std::logic_error>("A logic error.");
           }
           annotation.printWithRoundResult(
-            uuid, i, round_progress, results, round_delta_scores, round_ranks, std::cout);
+            uuid, i, round_progress, results, round_delta_scores, next_benchang, 0u, std::cout);
         }
         player_annotations[i].clear();
       }
@@ -601,18 +602,8 @@ void convert(std::filesystem::path const &ph) {
         player_states[3u].getCurrentScore() - player_states[3u].getInitialScore()
       };
 
-      RoundRankInput const round_rank_input{
-        std::make_pair(0, player_states[0].getCurrentScore()),
-        std::make_pair(1, player_states[1].getCurrentScore()),
-        std::make_pair(2, player_states[2].getCurrentScore()),
-        std::make_pair(3, player_states[3].getCurrentScore()),
-      };
-      std::array<std::uint_fast8_t, 4u> const round_ranks{
-        getRoundRank_(0u, round_rank_input),
-        getRoundRank_(1u, round_rank_input),
-        getRoundRank_(2u, round_rank_input),
-        getRoundRank_(3u, round_rank_input),
-      };
+      std::uint_fast8_t const next_benchang = player_states[0u].getBenchang() + 1u;
+      std::uint_fast8_t const next_num_liqibangs = player_states[0u].getNumLiqibangs();
 
       for (std::uint_fast8_t i = 0u; i < 4u; ++i) {
         for (auto const &annotation : player_annotations[i]) {
@@ -621,8 +612,8 @@ void convert(std::filesystem::path const &ph) {
             UINT_FAST8_MAX
           };
           annotation.printWithRoundResult(
-            uuid, i, round_progress, round_result, round_delta_scores, round_ranks,
-            std::cout);
+            uuid, i, round_progress, round_result, round_delta_scores, next_benchang,
+            next_num_liqibangs, std::cout);
         }
         player_annotations[i].clear();
       }
@@ -726,6 +717,9 @@ void convert(std::filesystem::path const &ph) {
           prev_action_candidates, record);
       }
 
+      // 荒牌平局でゲームが終了したことを示すフラグ．
+      bool const game_end = record_count + 1u == record_size;
+
       std::array<std::int_fast32_t, 4u> scores{
         player_states[0u].getCurrentScore(),
         player_states[1u].getCurrentScore(),
@@ -743,24 +737,26 @@ void convert(std::filesystem::path const &ph) {
         }
       }
 
+      if (game_end) {
+        // 荒牌平局でゲームが終了した場合，リーチ棒はトップ取りとなる．
+        std::uint_fast8_t const top_seat = [&]() -> std::uint_fast8_t
+        {
+          std::uint_fast8_t result = 0u;
+          for (std::uint_fast8_t i = 1u; i < 4u; ++i) {
+            if (scores[result] < scores[i]) {
+              result = i;
+            }
+          }
+          return result;
+        }();
+        scores[top_seat] += 1000u * player_states[0u].getNumLiqibangs();
+      }
+
       std::array<std::int_fast32_t, 4u> const round_delta_scores{
         scores[0u] - player_states[0u].getInitialScore(),
         scores[1u] - player_states[1u].getInitialScore(),
         scores[2u] - player_states[2u].getInitialScore(),
         scores[3u] - player_states[3u].getInitialScore()
-      };
-
-      RoundRankInput const round_rank_input{
-        std::make_pair(0u, scores[0u]),
-        std::make_pair(1u, scores[1u]),
-        std::make_pair(2u, scores[2u]),
-        std::make_pair(3u, scores[3u])
-      };
-      std::array<std::uint_fast8_t, 4u> const round_ranks{
-        getRoundRank_(0u, round_rank_input),
-        getRoundRank_(1u, round_rank_input),
-        getRoundRank_(2u, round_rank_input),
-        getRoundRank_(3u, round_rank_input)
       };
 
       std::array<std::uint_fast8_t, 7u> results{
@@ -799,10 +795,14 @@ void convert(std::filesystem::path const &ph) {
         }
       }
 
+      std::uint_fast8_t const next_benchang = game_end ? 0u : player_states[0u].getBenchang() + 1u;
+      std::uint_fast8_t const next_num_liqibangs = game_end ? 0u : player_states[0u].getNumLiqibangs();
+
       for (std::size_t i = 0u; i < player_annotations.size(); ++i) {
         for (auto const &annotation : player_annotations[i]) {
           annotation.printWithRoundResult(
-            uuid, i, round_progress, results, round_delta_scores, round_ranks, std::cout);
+            uuid, i, round_progress, results, round_delta_scores, next_benchang,
+            next_num_liqibangs, std::cout);
         }
         player_annotations[i].clear();
       }
