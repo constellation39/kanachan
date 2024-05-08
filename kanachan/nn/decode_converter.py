@@ -21,14 +21,14 @@ class DecodeConverter(nn.Module):
         assert decode.size(0) == batch_size
         assert decode.size(1) == MAX_NUM_ACTION_CANDIDATES
 
-        if self.__mode in ("probabilities", "log_probabilities"):
+        if self.__mode in ("probs", "log_probs"):
             mask = candidates >= NUM_TYPES_OF_ACTIONS
             decode = decode.masked_fill(mask, -math.inf)
-            if self.__mode == "probabilities":
+            if self.__mode == "probs":
                 result = torch.softmax(decode, 1)
                 result = result.masked_fill(mask, 0.0)
             else:
-                assert self.__mode == "log_probabilities"
+                assert self.__mode == "log_probs"
                 result = torch.log_softmax(decode, 1)
                 result = result.masked_fill(mask, -math.inf)
             return result
