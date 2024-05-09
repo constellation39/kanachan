@@ -91,7 +91,8 @@ public:
     Kanachan::RoundProgress const &round_progress,
     std::array<std::uint_fast8_t, 7u> round_result,
     std::array<std::int_fast32_t, 4u> const &round_delta_scores,
-    std::array<std::uint_fast8_t, 4u> const &round_ranks,
+    std::uint_fast8_t const benchang,
+    std::uint_fast8_t const num_liqibangs,
     std::ostream &os) const;
 
 private:

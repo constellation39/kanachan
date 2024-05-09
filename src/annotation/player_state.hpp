@@ -65,6 +65,10 @@ public:
 
   std::uint_fast8_t getSeat() const;
 
+  std::uint_fast8_t getBenchang() const;
+
+  std::uint_fast8_t getNumLiqibangs() const;
+
   std::uint_fast8_t getLeftTileCount() const;
 
   std::uint_fast8_t getLevel() const;
