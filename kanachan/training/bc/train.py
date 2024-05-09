@@ -250,7 +250,10 @@ def _main(config: DictConfig) -> None:
     if config.rewrite_rooms is not None and (
         config.rewrite_rooms < 0 or 4 < config.rewrite_rooms
     ):
-        errmsg = f"{config.rewrite_rooms}: `rewrite_rooms` must be an integer within the range [0, 4]."
+        errmsg = (
+            f"{config.rewrite_rooms}: "
+            "`rewrite_rooms` must be an integer within the range [0, 4]."
+        )
         raise RuntimeError(errmsg)
 
     if isinstance(config.rewrite_grades, str):
@@ -275,7 +278,10 @@ def _main(config: DictConfig) -> None:
     if config.rewrite_grades is not None and (
         config.rewrite_grades < 0 or 15 < config.rewrite_grades
     ):
-        errmsg = f"{config.rewrite_grades}: `rewrite_grades` must be an integer within the range [0, 15]."
+        errmsg = (
+            f"{config.rewrite_grades}: "
+            "`rewrite_grades` must be an integer within the range [0, 15]."
+        )
         raise RuntimeError(errmsg)
 
     if device.type == "cpu":
