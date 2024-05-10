@@ -59,7 +59,7 @@ def _train(
 ) -> None:
     start_time = datetime.datetime.now()
 
-    world_size, rank, local_rank = get_distributed_environment()
+    world_size, _, local_rank = get_distributed_environment()
 
     is_amp_enabled = device.type != "cpu" and dtype != amp_dtype
     autocast_kwargs = {
@@ -72,8 +72,8 @@ def _train(
     # the training data set only once.
     data_loader = DataLoader(
         path=training_data,
-        batch_size=batch_size,
         num_skip_samples=num_samples,
+        batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=(num_workers >= 1),
         drop_last=(world_size >= 2),
@@ -239,7 +239,7 @@ def _train(
             summary_writer.add_scalar("Loss", loss_to_display, num_samples)
 
         if (
-            rank == 0
+            local_rank == 0
             and last_snapshot is not None
             and num_samples - last_snapshot >= snapshot_interval
         ):
@@ -373,11 +373,11 @@ def _main(config: DictConfig) -> None:
             )
             raise RuntimeError(errmsg)
 
+    num_samples = 0
     encoder_snapshot_path: Path | None = None
     decoder_snapshot_path: Path | None = None
     optimizer_snapshot_path: Path | None = None
     scheduler_snapshot_path: Path | None = None
-    num_samples = 0
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -542,7 +542,8 @@ def _main(config: DictConfig) -> None:
                 )
             if scheduler_snapshot_path is not None:
                 logging.info(
-                    "Initial scheduler snapshot: %s", scheduler_snapshot_path
+                    "Initial LR scheduler snapshot: %s",
+                    scheduler_snapshot_path,
                 )
 
         logging.info("Output prefix: %s", output_prefix)
@@ -613,8 +614,9 @@ def _main(config: DictConfig) -> None:
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
+        assert encoder_snapshot_path is not None
+        assert decoder_snapshot_path is not None
 
-        assert encoder_snapshot_path
         encoder_state_dict = torch.load(
             encoder_snapshot_path, map_location="cpu"
         )
@@ -622,7 +624,6 @@ def _main(config: DictConfig) -> None:
         if device.type == "cuda":
             encoder.cuda()
 
-        assert decoder_snapshot_path
         decoder_state_dict = torch.load(
             decoder_snapshot_path, map_location="cpu"
         )
