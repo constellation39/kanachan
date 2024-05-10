@@ -7,9 +7,9 @@ from kanachan.constants import (
     NUM_NUMERIC_FEATURES,
     MAX_NUM_ACTION_CANDIDATES,
     ENCODER_WIDTH,
-    ROUND_NUM_SPARSE_FEATURES,
-    ROUND_NUM_NUMERIC_FEATURES,
-    ROUND_ENCODER_WIDTH,
+    EOR_NUM_SPARSE_FEATURES,
+    EOR_NUM_NUMERIC_FEATURES,
+    EOR_ENCODER_WIDTH,
 )
 
 
@@ -126,9 +126,9 @@ class Decoder(nn.Module):
             if input_width == ENCODER_WIDTH:
                 first = MAX_NUM_ACTIVE_SPARSE_FEATURES + 2
                 last = MAX_NUM_ACTIVE_SPARSE_FEATURES + NUM_NUMERIC_FEATURES
-            elif input_width == ROUND_ENCODER_WIDTH:
-                first = ROUND_NUM_SPARSE_FEATURES + 2
-                last = ROUND_NUM_SPARSE_FEATURES + ROUND_NUM_NUMERIC_FEATURES
+            elif input_width == EOR_ENCODER_WIDTH:
+                first = EOR_NUM_SPARSE_FEATURES + 2
+                last = EOR_NUM_SPARSE_FEATURES + EOR_NUM_NUMERIC_FEATURES
             else:
                 raise NotImplementedError()
             assert last - first == 4
@@ -144,9 +144,9 @@ class Decoder(nn.Module):
             if input_width == ENCODER_WIDTH:
                 first = MAX_NUM_ACTIVE_SPARSE_FEATURES + 2
                 last = MAX_NUM_ACTIVE_SPARSE_FEATURES + NUM_NUMERIC_FEATURES
-            elif input_width == ROUND_ENCODER_WIDTH:
-                first = ROUND_NUM_SPARSE_FEATURES + 2
-                last = ROUND_NUM_SPARSE_FEATURES + ROUND_NUM_NUMERIC_FEATURES
+            elif input_width == EOR_ENCODER_WIDTH:
+                first = EOR_NUM_SPARSE_FEATURES + 2
+                last = EOR_NUM_SPARSE_FEATURES + EOR_NUM_NUMERIC_FEATURES
             else:
                 raise NotImplementedError()
             assert last - first == 4

@@ -6,10 +6,10 @@ import torch
 from torch import Tensor
 from torch.utils.data import get_worker_info
 from kanachan.constants import (
-    ROUND_NUM_TYPES_OF_SPARSE_FEATURES,
-    ROUND_NUM_SPARSE_FEATURES,
-    ROUND_NUM_NUMERIC_FEATURES,
-    ROUND_NUM_RESULTS,
+    EOR_NUM_TYPES_OF_SPARSE_FEATURES,
+    EOR_NUM_SPARSE_FEATURES,
+    EOR_NUM_NUMERIC_FEATURES,
+    EOR_NUM_GAME_RESULT,
 )
 
 
@@ -52,35 +52,31 @@ class DataIterator:
 
     def __parse_line(self, line: str) -> tuple[Tensor, Tensor, Tensor]:
         line = line.rstrip("\n")
-        uuid, sparse, numeric, result = line.split("\t")
+        uuid, sparse, numeric, game_result = line.split("\t")
 
         sparse = [int(x) for x in sparse.split(",")]
-        if len(sparse) != ROUND_NUM_SPARSE_FEATURES:
+        if len(sparse) != EOR_NUM_SPARSE_FEATURES:
             errmsg = f"{uuid}: {len(sparse)}"
             raise RuntimeError(errmsg)
         for x in sparse:
-            if x >= ROUND_NUM_TYPES_OF_SPARSE_FEATURES:
+            if x >= EOR_NUM_TYPES_OF_SPARSE_FEATURES:
                 errmsg = f"{uuid}: {x}"
                 raise RuntimeError(errmsg)
-        sparse = torch.tensor(
-            sparse, device=torch.device("cpu"), dtype=torch.int32
-        )
+        sparse = torch.tensor(sparse, device="cpu", dtype=torch.int32)
 
         numeric = [int(x) for x in numeric.split(",")]
-        if len(numeric) != ROUND_NUM_NUMERIC_FEATURES:
+        if len(numeric) != EOR_NUM_NUMERIC_FEATURES:
             raise RuntimeError(uuid)
-        numeric = torch.tensor(
-            numeric, device=torch.device("cpu"), dtype=torch.int32
+        numeric = torch.tensor(numeric, device="cpu", dtype=torch.int32)
+
+        game_result = [int(x) for x in game_result.split(",")]
+        if len(game_result) != EOR_NUM_GAME_RESULT:
+            raise RuntimeError(uuid)
+        game_result = torch.tensor(
+            game_result, device="cpu", dtype=torch.int32
         )
 
-        result = [int(x) for x in result.split(",")]
-        if len(result) != ROUND_NUM_RESULTS:
-            raise RuntimeError(uuid)
-        result = torch.tensor(
-            result, device=torch.device("cpu"), dtype=torch.int32
-        )
-
-        return sparse, numeric, result
+        return sparse, numeric, game_result
 
     def __next__(self) -> tuple[Tensor, Tensor, Tensor]:
         worker_info = get_worker_info()

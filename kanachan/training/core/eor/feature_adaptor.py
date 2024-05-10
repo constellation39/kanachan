@@ -13,9 +13,11 @@ class FeatureAdaptor(nn.Module):
     def forward(
         self, sparse: Tensor, numeric: Tensor
     ) -> tuple[Tensor, Tensor]:
+        assert sparse.dtype == torch.int32
         assert sparse.dim() == 2
         batch_size = sparse.size(0)
         assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+        assert numeric.dtype == torch.int32
         assert numeric.dim() == 2
         assert numeric.size(0) == batch_size
         assert numeric.size(1) == NUM_NUMERIC_FEATURES

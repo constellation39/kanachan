@@ -2,9 +2,9 @@ import torch
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint_sequential
 from kanachan.constants import (
-    ROUND_NUM_TYPES_OF_SPARSE_FEATURES,
-    ROUND_NUM_SPARSE_FEATURES,
-    ROUND_NUM_NUMERIC_FEATURES,
+    EOR_NUM_TYPES_OF_SPARSE_FEATURES,
+    EOR_NUM_SPARSE_FEATURES,
+    EOR_NUM_NUMERIC_FEATURES,
 )
 from kanachan import piecewise_linear_encoding
 
@@ -47,14 +47,14 @@ class RoundEncoder(nn.Module):
         self.__dimension = dimension
 
         self.sparse_embedding = nn.Embedding(
-            ROUND_NUM_TYPES_OF_SPARSE_FEATURES,
+            EOR_NUM_TYPES_OF_SPARSE_FEATURES,
             self.__dimension,
             device=device,
             dtype=dtype,
         )
 
         numeric_embedding = torch.randn(
-            ROUND_NUM_NUMERIC_FEATURES,
+            EOR_NUM_NUMERIC_FEATURES,
             self.__dimension // 2,
             requires_grad=True,
             device=device,
@@ -81,17 +81,17 @@ class RoundEncoder(nn.Module):
     def forward(self, sparse: Tensor, numeric: Tensor) -> Tensor:
         assert sparse.dim() == 2
         batch_size = sparse.size(0)
-        assert sparse.size(1) == ROUND_NUM_SPARSE_FEATURES
+        assert sparse.size(1) == EOR_NUM_SPARSE_FEATURES
         assert numeric.dim() == 2
         assert numeric.size(0) == batch_size
-        assert numeric.size(1) == ROUND_NUM_NUMERIC_FEATURES
+        assert numeric.size(1) == EOR_NUM_NUMERIC_FEATURES
 
         sparse = self.sparse_embedding(sparse)
 
         device = sparse.device
         dtype = sparse.dtype
         _numeric = torch.zeros(
-            (batch_size, ROUND_NUM_NUMERIC_FEATURES, self.__dimension // 2),
+            (batch_size, EOR_NUM_NUMERIC_FEATURES, self.__dimension // 2),
             requires_grad=False,
             device=device,
             dtype=dtype,
