@@ -3,12 +3,12 @@ from torch import Tensor
 import torch.utils.data
 from tensordict import TensorDict
 from kanachan.constants import (
-    ROUND_NUM_SPARSE_FEATURES,
-    ROUND_NUM_NUMERIC_FEATURES,
-    ROUND_NUM_RESULTS,
+    EOR_NUM_SPARSE_FEATURES,
+    EOR_NUM_NUMERIC_FEATURES,
+    EOR_NUM_GAME_RESULT,
 )
 from kanachan.training.common import get_distributed_environment
-from kanachan.training.core.round.data_iterator import DataIterator
+from kanachan.training.core.eor.data_iterator import DataIterator
 from kanachan.training.core.dataset import Dataset
 
 
@@ -62,17 +62,19 @@ class DataLoader:
 
         assert batch[0].dim() == 2
         batch_size = batch[0].size(0)
-        assert batch[0].size(1) == ROUND_NUM_SPARSE_FEATURES
+        assert batch[0].size(1) == EOR_NUM_SPARSE_FEATURES
         assert batch[1].dim() == 2
         assert batch[1].size(0) == batch_size
-        assert batch[1].size(1) == ROUND_NUM_NUMERIC_FEATURES
+        assert batch[1].size(1) == EOR_NUM_NUMERIC_FEATURES
         assert batch[2].dim() == 2
         assert batch[2].size(0) == batch_size
-        assert batch[2].size(1) == ROUND_NUM_RESULTS
+        assert batch[2].size(1) == EOR_NUM_GAME_RESULT
 
-        source = {"sparse": batch[0], "numeric": batch[1], "results": batch[2]}
-        data = TensorDict(
-            source=source, batch_size=batch_size, device=torch.device("cpu")
-        )
+        source = {
+            "sparse": batch[0],
+            "numeric": batch[1],
+            "game_result": batch[2],
+        }
+        data = TensorDict(source=source, batch_size=batch_size, device="cpu")
 
         return data

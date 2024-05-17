@@ -19,7 +19,7 @@ from torch.distributed import init_process_group, ReduceOp, all_reduce
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
-from kanachan.constants import MAX_NUM_ACTIVE_SPARSE_FEATURES
+from kanachan.constants import MAX_NUM_ACTIVE_SPARSE_FEATURES, NUM_RESULTS
 import kanachan.training.core.config as _config
 
 # pylint: disable=unused-import
@@ -43,9 +43,10 @@ def _train(
     dtype: torch.dtype,
     amp_dtype: torch.dtype,
     training_data: Path,
+    rewrite_rooms: int | None,
+    rewrite_grades: int | None,
     num_workers: int,
     num_samples: int,
-    rewrite_grades: int | None,
     network_tdm: nn.Module,
     batch_size: int,
     gradient_accumulation_steps: int,
@@ -58,7 +59,7 @@ def _train(
 ) -> None:
     start_time = datetime.datetime.now()
 
-    world_size, rank, local_rank = get_distributed_environment()
+    world_size, _, local_rank = get_distributed_environment()
 
     is_amp_enabled = device.type != "cpu" and dtype != amp_dtype
     autocast_kwargs = {
@@ -71,8 +72,8 @@ def _train(
     # the training data set only once.
     data_loader = DataLoader(
         path=training_data,
-        batch_size=batch_size,
         num_skip_samples=num_samples,
+        batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=(num_workers >= 1),
         drop_last=(world_size >= 2),
@@ -91,43 +92,63 @@ def _train(
     loss_function = nn.CrossEntropyLoss()
 
     for data in data_loader:
+        sparse: Tensor = data["sparse"]
+        assert sparse.device == torch.device("cpu")
+        assert sparse.dtype == torch.int32
+        assert sparse.dim() == 2
+        assert sparse.size(0) == batch_size
+        assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+
+        if rewrite_rooms is not None:
+            assert 0 <= rewrite_rooms and rewrite_rooms <= 4
+            sparse[:, 0].fill_(rewrite_rooms)
+
         if rewrite_grades is not None:
             assert 0 <= rewrite_grades and rewrite_grades <= 15
-            data["sparse"][:, 2] = torch.full_like(
-                data["sparse"][:, 2], 7 + rewrite_grades
-            )
-            data["sparse"][:, 3] = torch.full_like(
-                data["sparse"][:, 3], 23 + rewrite_grades
-            )
-            data["sparse"][:, 4] = torch.full_like(
-                data["sparse"][:, 4], 39 + rewrite_grades
-            )
-            data["sparse"][:, 5] = torch.full_like(
-                data["sparse"][:, 5], 55 + rewrite_grades
-            )
+            sparse[:, 2].fill_(7 + rewrite_grades)
+            sparse[:, 3].fill_(23 + rewrite_grades)
+            sparse[:, 4].fill_(39 + rewrite_grades)
+            sparse[:, 5].fill_(55 + rewrite_grades)
 
         data: TensorDict = data.to(device=device)
         with torch.autocast(**autocast_kwargs):
             network_tdm(data)
 
         decode: Tensor = data["decode"]
+        assert decode.device == device
+        assert decode.dtype == dtype
         assert decode.dim() == 3
         assert decode.size(0) == batch_size
         assert decode.size(1) == 4
         assert decode.size(2) == 4
 
-        sparse: Tensor = data["sparse"]
-        assert sparse.dim() == 2
-        assert sparse.size(0) == batch_size
-        assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
-
         seat = sparse[:, 6] - 71
-        decode = decode[torch.arange(batch_size), seat]
+        assert seat.device == torch.device("cpu")
+        assert seat.dtype == torch.int32
+        assert seat.dim() == 1
+        assert seat.size(0) == batch_size
 
-        eog_scores: Tensor = data["results"][:, 8:12]
+        decode = decode[torch.arange(batch_size), seat]
+        assert decode.device == device
+        assert decode.dtype == dtype
+        assert decode.dim() == 2
+        assert decode.size(0) == batch_size
+        assert decode.size(1) == 4
+
+        results: Tensor = data["results"]
+        assert results.device == device
+        assert results.dtype == torch.int32
+        assert results.dim() == 2
+        assert results.size(0) == batch_size
+        assert results.size(1) == NUM_RESULTS
+
+        eog_scores: Tensor = results[:, 10:14]
+        assert eog_scores.device == device
+        assert eog_scores.dtype == torch.int32
         assert eog_scores.dim() == 2
         assert eog_scores.size(0) == batch_size
         assert eog_scores.size(1) == 4
+        eog_scores = eog_scores.to(device="cpu")
 
         ranking: Tensor = torch.zeros(
             (batch_size,), device="cpu", dtype=torch.int64
@@ -154,7 +175,8 @@ def _train(
         loss_to_display = _loss.item()
 
         if math.isnan(loss_to_display):
-            raise RuntimeError("Training loss becomes NaN.")
+            errmsg = "Training loss becomes NaN."
+            raise RuntimeError(errmsg)
 
         loss = loss / gradient_accumulation_steps
         if grad_scaler is None:
@@ -177,7 +199,8 @@ def _train(
                 grad_scaler.unscale_(optimizer)
             gradient = get_gradient(network_tdm)
             # pylint: disable=not-callable
-            gradient_norm: float = torch.linalg.vector_norm(gradient).item()
+            gradient_norm = torch.linalg.vector_norm(gradient).item()
+            assert isinstance(gradient_norm, float)
             nn.utils.clip_grad_norm_(
                 network_tdm.parameters(),
                 max_gradient_norm,
@@ -216,7 +239,7 @@ def _train(
             summary_writer.add_scalar("Loss", loss_to_display, num_samples)
 
         if (
-            rank == 0
+            local_rank == 0
             and last_snapshot is not None
             and num_samples - last_snapshot >= snapshot_interval
         ):
@@ -244,42 +267,80 @@ def _main(config: DictConfig) -> None:
     ) = _config.device.validate(config)
 
     if not config.training_data.exists():
-        raise RuntimeError(f"{config.training_data}: Does not exist.")
+        errmsg = f"{config.training_data}: Does not exist."
+        raise RuntimeError(errmsg)
     if not config.training_data.is_file():
-        raise RuntimeError(f"{config.training_data}: Not a file.")
+        errmsg = f"{config.training_data}: Not a file."
+        raise RuntimeError(errmsg)
+
+    if isinstance(config.rewrite_rooms, str):
+        config.rewrite_rooms = {
+            "bronze": 0,
+            "silver": 1,
+            "gold": 2,
+            "jade": 3,
+            "throne": 4,
+        }[config.rewrite_rooms]
+    if config.rewrite_rooms is not None and (
+        config.rewrite_rooms < 0 or 4 < config.rewrite_rooms
+    ):
+        errmsg = (
+            f"{config.rewrite_rooms}: "
+            "`rewrite_rooms` must be an integer within the range [0, 4]."
+        )
+        raise RuntimeError(errmsg)
+
+    if isinstance(config.rewrite_grades, str):
+        config.rewrite_grades = {
+            "novice1": 0,
+            "novice2": 1,
+            "novice3": 2,
+            "adept1": 3,
+            "adept2": 4,
+            "adept3": 5,
+            "expert1": 6,
+            "expert2": 7,
+            "expert3": 8,
+            "master1": 9,
+            "master2": 10,
+            "master3": 11,
+            "saint1": 12,
+            "saint2": 13,
+            "saint3": 14,
+            "celestial": 15,
+        }[config.rewrite_grades]
+    if config.rewrite_grades is not None and (
+        config.rewrite_grades < 0 or 15 < config.rewrite_grades
+    ):
+        errmsg = (
+            f"{config.rewrite_grades}: "
+            "`rewrite_grades` must be an integer within the range [0, 15]."
+        )
+        raise RuntimeError(errmsg)
 
     if device.type == "cpu":
         if config.num_workers is None:
             config.num_workers = 0
         if config.num_workers < 0:
-            raise RuntimeError(
-                f"{config.num_workers}: An invalid number of workers."
-            )
+            errmsg = f"{config.num_workers}: An invalid number of workers."
+            raise RuntimeError(errmsg)
         if config.num_workers > 0:
-            raise RuntimeError(
+            errmsg = (
                 f"{config.num_workers}: An invalid number of workers for CPU."
             )
+            raise RuntimeError(errmsg)
     else:
         assert device.type == "cuda"
         if config.num_workers is None:
             config.num_workers = 2
         if config.num_workers < 0:
-            raise RuntimeError(
-                f"{config.num_workers}: An invalid number of workers."
-            )
+            errmsg = f"{config.num_workers}: An invalid number of workers."
+            raise RuntimeError(errmsg)
         if config.num_workers == 0:
-            raise RuntimeError(
+            errmsg = (
                 f"{config.num_workers}: An invalid number of workers for GPU."
             )
-
-    if config.rewrite_grades is not None and (
-        config.rewrite_grades < 0 or 15 < config.rewrite_grades
-    ):
-        msg = (
-            f"{config.rewrite_grades}:"
-            " `rewrite_grades` must be an integer within the range [0, 15]."
-        )
-        raise RuntimeError(msg)
+            raise RuntimeError(errmsg)
 
     _config.encoder.validate(config)
 
@@ -287,33 +348,36 @@ def _main(config: DictConfig) -> None:
 
     if config.initial_model_prefix is not None:
         if config.encoder.load_from is not None:
-            raise RuntimeError(
+            errmsg = (
                 "`initial_model_prefix` conflicts with `encoder.load_from`."
             )
+            raise RuntimeError(errmsg)
         if not config.initial_model_prefix.exists():
-            raise RuntimeError(
-                f"{config.initial_model_prefix}: Does not exist."
-            )
+            errmsg = f"{config.initial_model_prefix}: Does not exist."
+            raise RuntimeError(errmsg)
         if not config.initial_model_prefix.is_dir():
-            raise RuntimeError(
-                f"{config.initial_model_prefix}: Not a directory."
-            )
+            errmsg = f"{config.initial_model_prefix}: Not a directory."
+            raise RuntimeError(errmsg)
 
     if config.initial_model_index is not None:
         if config.initial_model_prefix is None:
-            raise RuntimeError(
-                "`initial_model_index` must be combined with `initial_model_prefix`."
+            errmsg = (
+                "`initial_model_index` must be combined with "
+                "`initial_model_prefix`."
             )
+            raise RuntimeError(errmsg)
         if config.initial_model_index < 0:
-            raise RuntimeError(
-                f"{config.initial_model_index}: An invalid initial model index."
+            errmsg = (
+                f"{config.initial_model_index}:"
+                " An invalid initial model index."
             )
+            raise RuntimeError(errmsg)
 
+    num_samples = 0
     encoder_snapshot_path: Path | None = None
     decoder_snapshot_path: Path | None = None
     optimizer_snapshot_path: Path | None = None
     scheduler_snapshot_path: Path | None = None
-    num_samples = 0
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -336,9 +400,8 @@ def _main(config: DictConfig) -> None:
                     config.initial_model_index = int(match[1])
                     continue
         if config.initial_model_index is None:
-            raise RuntimeError(
-                f"{config.initial_model_prefix}: No model snapshot found."
-            )
+            errmsg = f"{config.initial_model_prefix}: No model snapshot found."
+            raise RuntimeError(errmsg)
 
         if config.initial_model_index == sys.maxsize:
             config.initial_model_index = 0
@@ -352,18 +415,22 @@ def _main(config: DictConfig) -> None:
         )
         assert encoder_snapshot_path is not None
         if not encoder_snapshot_path.exists():
-            raise RuntimeError(f"{encoder_snapshot_path}: Does not exist.")
+            errmsg = f"{encoder_snapshot_path}: Does not exist."
+            raise RuntimeError(errmsg)
         if not encoder_snapshot_path.is_file():
-            raise RuntimeError(f"{encoder_snapshot_path}: Not a file.")
+            errmsg = f"{encoder_snapshot_path}: Not a file."
+            raise RuntimeError(errmsg)
 
         decoder_snapshot_path = (
             config.initial_model_prefix / f"decoder{infix}.pth"
         )
         assert decoder_snapshot_path
         if not decoder_snapshot_path.exists():
-            raise RuntimeError(f"{decoder_snapshot_path}: Does not exist.")
+            errmsg = f"{decoder_snapshot_path}: Does not exist."
+            raise RuntimeError(errmsg)
         if not decoder_snapshot_path.is_file():
-            raise RuntimeError(f"{decoder_snapshot_path}: Not a file.")
+            errmsg = f"{decoder_snapshot_path}: Not a file."
+            raise RuntimeError(errmsg)
 
         optimizer_snapshot_path = (
             config.initial_model_prefix / f"optimizer{infix}.pth"
@@ -384,27 +451,33 @@ def _main(config: DictConfig) -> None:
             scheduler_snapshot_path = None
 
     if config.batch_size <= 0:
-        raise RuntimeError(
+        errmsg = (
             f"{config.batch_size}: `batch_size` must be a positive integer."
         )
+        raise RuntimeError(errmsg)
 
     if config.gradient_accumulation_steps < 1:
-        raise RuntimeError(
+        errmsg = (
             f"{config.gradient_accumulation_steps}: "
             "`gradient_accumulation_steps` must be an integer greater than 0."
         )
+        raise RuntimeError(errmsg)
 
     if config.max_gradient_norm <= 0.0:
-        raise RuntimeError(
-            f"{config.max_gradient_norm}: `max_gradient_norm` must be a positive real value."
+        errmsg = (
+            f"{config.max_gradient_norm}: "
+            "`max_gradient_norm` must be a positive real value."
         )
+        raise RuntimeError(errmsg)
 
     _config.optimizer.validate(config)
 
     if config.snapshot_interval < 0:
-        raise RuntimeError(
-            f"{config.snapshot_interval}: `snapshot_interval` must be a non-negative integer."
+        errmsg = (
+            f"{config.snapshot_interval}: "
+            "`snapshot_interval` must be a non-negative integer."
         )
+        raise RuntimeError(errmsg)
 
     output_prefix = Path(HydraConfig.get().runtime.output_dir)
 
@@ -423,12 +496,17 @@ def _main(config: DictConfig) -> None:
             logging.info(
                 "# of training samples consumed so far: %d", num_samples
             )
-        logging.info("# of workers: %d", config.num_workers)
+        if config.rewrite_rooms is not None:
+            logging.info(
+                "Rewrite the rooms in the training data to: %d",
+                config.rewrite_rooms,
+            )
         if config.rewrite_grades is not None:
             logging.info(
                 "Rewrite the ranks in the training data to: %d",
                 config.rewrite_grades,
             )
+        logging.info("# of workers: %d", config.num_workers)
 
         _config.encoder.dump(config)
 
@@ -464,7 +542,8 @@ def _main(config: DictConfig) -> None:
                 )
             if scheduler_snapshot_path is not None:
                 logging.info(
-                    "Initial scheduler snapshot: %s", scheduler_snapshot_path
+                    "Initial LR scheduler snapshot: %s",
+                    scheduler_snapshot_path,
                 )
 
         logging.info("Output prefix: %s", output_prefix)
@@ -535,8 +614,9 @@ def _main(config: DictConfig) -> None:
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
+        assert encoder_snapshot_path is not None
+        assert decoder_snapshot_path is not None
 
-        assert encoder_snapshot_path
         encoder_state_dict = torch.load(
             encoder_snapshot_path, map_location="cpu"
         )
@@ -544,7 +624,6 @@ def _main(config: DictConfig) -> None:
         if device.type == "cuda":
             encoder.cuda()
 
-        assert decoder_snapshot_path
         decoder_state_dict = torch.load(
             decoder_snapshot_path, map_location="cpu"
         )
@@ -668,9 +747,10 @@ def _main(config: DictConfig) -> None:
             dtype=dtype,
             amp_dtype=amp_dtype,
             training_data=config.training_data,
+            rewrite_rooms=config.rewrite_rooms,
+            rewrite_grades=config.rewrite_grades,
             num_workers=config.num_workers,
             num_samples=num_samples,
-            rewrite_grades=config.rewrite_grades,
             network_tdm=network_tdm,
             batch_size=config.batch_size,
             gradient_accumulation_steps=config.gradient_accumulation_steps,

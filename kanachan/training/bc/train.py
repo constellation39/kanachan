@@ -21,6 +21,11 @@ from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 import kanachan.training.core.config as _config
 
+from kanachan.constants import (
+    MAX_NUM_ACTIVE_SPARSE_FEATURES,
+    MAX_NUM_ACTION_CANDIDATES,
+)
+
 # pylint: disable=unused-import
 import kanachan.training.bc.config
 from kanachan.training.core.bc import DataLoader
@@ -43,6 +48,8 @@ def _training(
     amp_dtype: torch.dtype,
     training_data: Path,
     num_workers: int,
+    rewrite_rooms: int | None,
+    rewrite_grades: int | None,
     num_samples: int,
     network_tdm: nn.Module,
     batch_size: int,
@@ -89,11 +96,44 @@ def _training(
     loss_function = nn.NLLLoss()
 
     for data in data_loader:
+        if rewrite_rooms is not None:
+            assert 0 <= rewrite_rooms and rewrite_rooms <= 4
+            sparse: Tensor = data["sparse"]
+            assert sparse.device == torch.device("cpu")
+            assert sparse.dtype == torch.int32
+            assert sparse.dim() == 2
+            assert sparse.size(0) == batch_size
+            assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+            sparse[:, 0].fill_(rewrite_rooms)
+
+        if rewrite_grades is not None:
+            assert 0 <= rewrite_grades and rewrite_grades <= 15
+            sparse: Tensor = data["sparse"]
+            assert sparse.device == torch.device("cpu")
+            assert sparse.dtype == torch.int32
+            assert sparse.dim() == 2
+            assert sparse.size(0) == batch_size
+            assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+            sparse[:, 2].fill_(7 + rewrite_grades)
+            sparse[:, 3].fill_(23 + rewrite_grades)
+            sparse[:, 4].fill_(39 + rewrite_grades)
+            sparse[:, 5].fill_(55 + rewrite_grades)
+
         data: TensorDict = data.to(device=device)
         with torch.autocast(**autocast_kwargs):
             network_tdm(data)
         action: Tensor = data["action"]
-        loss: Tensor = loss_function(data["log_probs"], action.long())
+        assert action.device == device
+        assert action.dtype == torch.int32
+        assert action.dim() == 1
+        assert action.size(0) == batch_size
+        log_probs: Tensor = data["log_probs"]
+        assert log_probs.device == device
+        assert log_probs.dtype == dtype
+        assert log_probs.dim() == 2
+        assert log_probs.size(0) == batch_size
+        assert log_probs.size(1) == MAX_NUM_ACTION_CANDIDATES
+        loss: Tensor = loss_function(log_probs, action.long())
 
         _loss = loss
         if world_size >= 2:
@@ -125,7 +165,8 @@ def _training(
                 grad_scaler.unscale_(optimizer)
             gradient = get_gradient(network_tdm)
             # pylint: disable=not-callable
-            gradient_norm: float = torch.linalg.vector_norm(gradient).item()
+            gradient_norm = torch.linalg.vector_norm(gradient).item()
+            assert isinstance(gradient_norm, float)
             nn.utils.clip_grad_norm_(
                 network_tdm.parameters(),
                 max_gradient_norm,
@@ -198,6 +239,51 @@ def _main(config: DictConfig) -> None:
         errmsg = f"{config.training_data}: Not a file."
         raise RuntimeError(errmsg)
 
+    if isinstance(config.rewrite_rooms, str):
+        config.rewrite_rooms = {
+            "bronze": 0,
+            "silver": 1,
+            "gold": 2,
+            "jade": 3,
+            "throne": 4,
+        }[config.rewrite_rooms]
+    if config.rewrite_rooms is not None and (
+        config.rewrite_rooms < 0 or 4 < config.rewrite_rooms
+    ):
+        errmsg = (
+            f"{config.rewrite_rooms}: "
+            "`rewrite_rooms` must be an integer within the range [0, 4]."
+        )
+        raise RuntimeError(errmsg)
+
+    if isinstance(config.rewrite_grades, str):
+        config.rewrite_grades = {
+            "novice1": 0,
+            "novice2": 1,
+            "novice3": 2,
+            "adept1": 3,
+            "adept2": 4,
+            "adept3": 5,
+            "expert1": 6,
+            "expert2": 7,
+            "expert3": 8,
+            "master1": 9,
+            "master2": 10,
+            "master3": 11,
+            "saint1": 12,
+            "saint2": 13,
+            "saint3": 14,
+            "celestial": 15,
+        }[config.rewrite_grades]
+    if config.rewrite_grades is not None and (
+        config.rewrite_grades < 0 or 15 < config.rewrite_grades
+    ):
+        errmsg = (
+            f"{config.rewrite_grades}: "
+            "`rewrite_grades` must be an integer within the range [0, 15]."
+        )
+        raise RuntimeError(errmsg)
+
     if device.type == "cpu":
         if config.num_workers is None:
             config.num_workers = 0
@@ -231,7 +317,7 @@ def _main(config: DictConfig) -> None:
     if config.initial_model_prefix is not None:
         if config.encoder.load_from is not None:
             errmsg = (
-                "`initial_model_prefix` conflicts with" " `encoder.load_from`."
+                "`initial_model_prefix` conflicts with `encoder.load_from`."
             )
             raise RuntimeError(errmsg)
         if config.initial_policy_decoder is not None:
@@ -387,6 +473,16 @@ def _main(config: DictConfig) -> None:
                 "# of training samples consumed so far: %d", num_samples
             )
         logging.info("# of workers: %d", config.num_workers)
+        if config.rewrite_rooms is not None:
+            logging.info(
+                "Rewrite the rooms in the training data to: %d",
+                config.rewrite_rooms,
+            )
+        if config.rewrite_grades is not None:
+            logging.info(
+                "Rewrite the grades in the training data to: %d",
+                config.rewrite_grades,
+            )
 
         _config.encoder.dump(config)
 
@@ -525,6 +621,7 @@ def _main(config: DictConfig) -> None:
             )
 
         if scheduler_snapshot_path is not None:
+            assert scheduler is not None
             scheduler.load_state_dict(
                 torch.load(scheduler_snapshot_path, map_location="cpu")
             )
@@ -545,9 +642,11 @@ def _main(config: DictConfig) -> None:
         torch.save(
             optimizer.state_dict(), snapshots_path / f"optimizer{infix}.pth"
         )
-        torch.save(
-            scheduler.state_dict(), snapshots_path / f"lr-scheduler{infix}.pth"
-        )
+        if scheduler is not None:
+            torch.save(
+                scheduler.state_dict(),
+                snapshots_path / f"lr-scheduler{infix}.pth",
+            )
 
         network_tdm_state = dump_object(
             network_tdm_to_save,
@@ -630,6 +729,8 @@ def _main(config: DictConfig) -> None:
             amp_dtype=amp_dtype,
             training_data=config.training_data,
             num_workers=config.num_workers,
+            rewrite_rooms=config.rewrite_rooms,
+            rewrite_grades=config.rewrite_grades,
             num_samples=num_samples,
             network_tdm=network_tdm,
             batch_size=config.batch_size,

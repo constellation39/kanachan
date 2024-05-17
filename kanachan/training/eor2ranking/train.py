@@ -17,41 +17,42 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import GradScaler
 from torch.distributed import (
     init_process_group,
-    is_initialized,
-    get_world_size,
-    get_rank,
     ReduceOp,
     all_reduce,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
-from kanachan.common import get_grading_point
+from kanachan.constants import EOR_NUM_SPARSE_FEATURES, EOR_NUM_GAME_RESULT
 import kanachan.training.core.config as _config
-import kanachan.training.round2grading.config  # pylint: disable=unused-import
-from kanachan.training.core.round import DataLoader
+import kanachan.training.eor2ranking.config  # pylint: disable=unused-import
+from kanachan.training.core.eor import DataLoader
 from kanachan.model_loader import dump_object, dump_model
-from kanachan.nn import RoundEncoder, Decoder, Symexp, SymlogLoss
-from kanachan.training.common import get_gradient, is_gradient_nan
+from kanachan.nn import RoundEncoder, Decoder
+from kanachan.training.common import (
+    get_distributed_environment,
+    get_gradient,
+    is_gradient_nan,
+)
 
 
 Progress = Callable[[], None]
 SnapshotWriter = Callable[[int | None], None]
 
 
-def _training(
+def _train(
     *,
     device: torch.device,
     dtype: torch.dtype,
     amp_dtype: torch.dtype,
     training_data: Path,
+    rewrite_rooms: int | None,
+    rewrite_grades: int | None,
     num_workers: int,
     num_samples: int,
-    celestial_scale: int,
     network_tdm: nn.Module,
     batch_size: int,
     gradient_accumulation_steps: int,
-    loss_function: str,
     max_gradient_norm: float,
     optimizer: Optimizer,
     scheduler: LRScheduler | None,
@@ -61,12 +62,7 @@ def _training(
 ) -> None:
     start_time = datetime.datetime.now()
 
-    if is_initialized():
-        world_size = get_world_size()
-        rank = get_rank()
-    else:
-        world_size = 1
-        rank = 0
+    world_size, _, local_rank = get_distributed_environment()
 
     is_amp_enabled = device.type != "cpu" and dtype != amp_dtype
     autocast_kwargs = {
@@ -83,18 +79,8 @@ def _training(
         batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=(num_workers >= 1),
-        drop_last=True,
+        drop_last=(world_size >= 2),
     )
-
-    if loss_function == "l1":
-        _loss_function = nn.L1Loss()
-    elif loss_function == "l2":
-        _loss_function = nn.MSELoss()
-    elif loss_function == "smooth_l1":
-        _loss_function = nn.HuberLoss()
-    else:
-        assert loss_function == "symlog"
-        _loss_function = SymlogLoss()
 
     grad_scaler = None
     if is_amp_enabled:
@@ -106,59 +92,78 @@ def _training(
 
     batch_count = 0
 
+    loss_function = nn.CrossEntropyLoss()
+
     for data in data_loader:
+        sparse: Tensor = data["sparse"]
+        assert sparse.device == torch.device("cpu")
+        assert sparse.dtype == torch.int32
+        assert sparse.dim() == 2
+        assert sparse.size(0) == batch_size
+        assert sparse.size(1) == EOR_NUM_SPARSE_FEATURES
 
-        def get_target(_data: TensorDict) -> Tensor:
-            sparse: Tensor = _data["sparse"]
-            results: Tensor = _data["results"]
+        if rewrite_rooms is not None:
+            assert 0 <= rewrite_rooms and rewrite_rooms <= 4
+            sparse[:, 0].fill_(rewrite_rooms)
 
-            room: list[int] = sparse[:, 0].tolist()
-            game_style: list[int] = (sparse[:, 1] - 5).tolist()
-            _grades: Tensor = sparse[:, 2:6]
-            _grades[:, 0] -= 7
-            _grades[:, 1] -= 23
-            _grades[:, 2] -= 39
-            _grades[:, 3] -= 55
-            grades: list[list[int]] = _grades.tolist()
-            scores: list[list[int]] = results[:, 4:].tolist()
+        if rewrite_grades is not None:
+            assert 0 <= rewrite_grades and rewrite_grades <= 15
+            sparse[:, 2].fill_(7 + rewrite_grades)
+            sparse[:, 3].fill_(23 + rewrite_grades)
+            sparse[:, 4].fill_(39 + rewrite_grades)
+            sparse[:, 5].fill_(55 + rewrite_grades)
 
-            targets: list[Tensor] = []
-            for i in range(batch_size):
-                all_celestial = all(map(lambda grade: grade == 15, grades[i]))
-                target = torch.zeros(
-                    4, device=torch.device("cpu"), dtype=dtype
-                )
-                for seat in range(4):
-                    grade = grades[i][seat]
-                    score = scores[i][seat]
-                    ranking = 0
-                    for j in range(seat):
-                        if scores[i][j] >= score:
-                            ranking += 1
-                    for j in range(seat + 1, 4):
-                        if scores[i][j] > score:
-                            ranking += 1
-                    target[seat] = get_grading_point(
-                        room[i],
-                        game_style[i],
-                        grade,
-                        ranking,
-                        score,
-                        celestial_scale,
-                        all_celestial,
-                    )
-                targets.append(target)
-            return torch.stack(targets)
-
-        target = get_target(data)
-
-        data = data.to(device=device)
-        target = target.to(device=device)
-
+        data: TensorDict = data.to(device=device)
         with torch.autocast(**autocast_kwargs):
             network_tdm(data)
-        prediction: Tensor = data["decode"]
-        loss: Tensor = _loss_function(prediction, target)
+
+        decode: Tensor = data["decode"]
+        assert decode.device == device
+        assert decode.dtype == dtype
+        assert decode.dim() == 3
+        assert decode.size(0) == batch_size
+        assert decode.size(1) == 4
+        assert decode.size(2) == 4
+
+        seat = sparse[:, 6] - 71
+        assert seat.device == torch.device("cpu")
+        assert seat.dtype == torch.int32
+        assert seat.dim() == 1
+        assert seat.size(0) == batch_size
+
+        decode = decode[torch.arange(batch_size), seat]
+        assert decode.device == device
+        assert decode.dtype == dtype
+        assert decode.dim() == 2
+        assert decode.size(0) == batch_size
+        assert decode.size(1) == 4
+
+        game_result: Tensor = data["game_result"]
+        assert game_result.device == device
+        assert game_result.dtype == torch.int32
+        assert game_result.dim() == 2
+        assert game_result.size(0) == batch_size
+        assert game_result.size(1) == EOR_NUM_GAME_RESULT
+        eog_scores = game_result.to(device="cpu")
+
+        ranking: Tensor = torch.zeros(
+            (batch_size,), device="cpu", dtype=torch.int64
+        )
+        for i in range(batch_size):
+            _seat = int(seat[i].item())
+            _eog_scores: list[int] = eog_scores[i].tolist()
+            _eog_score = _eog_scores[_seat]
+            _ranking = 0
+            for s in range(_seat):
+                if _eog_scores[s] >= _eog_score:
+                    _ranking += 1
+            for s in range(_seat + 1, 4):
+                if _eog_scores[s] > _eog_score:
+                    _ranking += 1
+            ranking[i] = _ranking
+        ranking = ranking.to(device=device)
+
+        loss: Tensor = loss_function(decode, ranking)
 
         _loss = loss
         if world_size >= 2:
@@ -166,7 +171,8 @@ def _training(
         loss_to_display = _loss.item()
 
         if math.isnan(loss_to_display):
-            raise RuntimeError("Training loss becomes NaN.")
+            errmsg = "Training loss becomes NaN."
+            raise RuntimeError(errmsg)
 
         loss = loss / gradient_accumulation_steps
         if grad_scaler is None:
@@ -189,7 +195,8 @@ def _training(
                 grad_scaler.unscale_(optimizer)
             gradient = get_gradient(network_tdm)
             # pylint: disable=not-callable
-            gradient_norm: float = torch.linalg.vector_norm(gradient).item()
+            gradient_norm = torch.linalg.vector_norm(gradient).item()
+            assert isinstance(gradient_norm, float)
             nn.utils.clip_grad_norm_(
                 network_tdm.parameters(),
                 max_gradient_norm,
@@ -205,7 +212,7 @@ def _training(
 
             optimizer.zero_grad()
 
-            if rank == 0:
+            if local_rank == 0:
                 logging.info(
                     "sample = %d, loss = %E, gradient norm = %E",
                     num_samples,
@@ -214,21 +221,21 @@ def _training(
                 )
             summary_writer.add_scalar("Loss", loss_to_display, num_samples)
             summary_writer.add_scalar(
-                "Gradient norm", gradient_norm, num_samples
+                "Gradient Norm", gradient_norm, num_samples
             )
             if scheduler is not None:
                 summary_writer.add_scalar(
                     "LR", scheduler.get_last_lr()[0], num_samples
                 )
         else:
-            if rank == 0:
+            if local_rank == 0:
                 logging.info(
                     "sample = %d, loss = %E", num_samples, loss_to_display
                 )
             summary_writer.add_scalar("Loss", loss_to_display, num_samples)
 
         if (
-            rank == 0
+            local_rank == 0
             and last_snapshot is not None
             and num_samples - last_snapshot >= snapshot_interval
         ):
@@ -237,7 +244,7 @@ def _training(
 
     elapsed_time = datetime.datetime.now() - start_time
 
-    if rank == 0:
+    if local_rank == 0:
         logging.info(
             "A training epoch has finished (elapsed time = %s).", elapsed_time
         )
@@ -256,38 +263,80 @@ def _main(config: DictConfig) -> None:
     ) = _config.device.validate(config)
 
     if not config.training_data.exists():
-        raise RuntimeError(f"{config.training_data}: Does not exist.")
+        errmsg = f"{config.training_data}: Does not exist."
+        raise RuntimeError(errmsg)
     if not config.training_data.is_file():
-        raise RuntimeError(f"{config.training_data}: Not a file.")
+        errmsg = f"{config.training_data}: Not a file."
+        raise RuntimeError(errmsg)
+
+    if isinstance(config.rewrite_rooms, str):
+        config.rewrite_rooms = {
+            "bronze": 0,
+            "silver": 1,
+            "gold": 2,
+            "jade": 3,
+            "throne": 4,
+        }[config.rewrite_rooms]
+    if config.rewrite_rooms is not None and (
+        config.rewrite_rooms < 0 or 4 < config.rewrite_rooms
+    ):
+        errmsg = (
+            f"{config.rewrite_rooms}: "
+            "`rewrite_rooms` must be an integer within the range [0, 4]."
+        )
+        raise RuntimeError(errmsg)
+
+    if isinstance(config.rewrite_grades, str):
+        config.rewrite_grades = {
+            "novice1": 0,
+            "novice2": 1,
+            "novice3": 2,
+            "adept1": 3,
+            "adept2": 4,
+            "adept3": 5,
+            "expert1": 6,
+            "expert2": 7,
+            "expert3": 8,
+            "master1": 9,
+            "master2": 10,
+            "master3": 11,
+            "saint1": 12,
+            "saint2": 13,
+            "saint3": 14,
+            "celestial": 15,
+        }[config.rewrite_grades]
+    if config.rewrite_grades is not None and (
+        config.rewrite_grades < 0 or 15 < config.rewrite_grades
+    ):
+        errmsg = (
+            f"{config.rewrite_grades}: "
+            "`rewrite_grades` must be an integer within the range [0, 15]."
+        )
+        raise RuntimeError(errmsg)
 
     if device.type == "cpu":
         if config.num_workers is None:
             config.num_workers = 0
         if config.num_workers < 0:
-            raise RuntimeError(
-                f"{config.num_workers}: An invalid number of workers."
-            )
+            errmsg = f"{config.num_workers}: An invalid number of workers."
+            raise RuntimeError(errmsg)
         if config.num_workers > 0:
-            raise RuntimeError(
+            errmsg = (
                 f"{config.num_workers}: An invalid number of workers for CPU."
             )
+            raise RuntimeError(errmsg)
     else:
         assert device.type == "cuda"
         if config.num_workers is None:
             config.num_workers = 2
         if config.num_workers < 0:
-            raise RuntimeError(
-                f"{config.num_workers}: An invalid number of workers."
-            )
+            errmsg = f"{config.num_workers}: An invalid number of workers."
+            raise RuntimeError(errmsg)
         if config.num_workers == 0:
-            raise RuntimeError(
+            errmsg = (
                 f"{config.num_workers}: An invalid number of workers for GPU."
             )
-
-    if config.celestial_scale <= 0:
-        raise RuntimeError(
-            f"{config.celestial_scale}: `celestial_scale` must be a positive inter."
-        )
+            raise RuntimeError(errmsg)
 
     _config.encoder.validate(config)
 
@@ -295,27 +344,30 @@ def _main(config: DictConfig) -> None:
 
     if config.initial_model_prefix is not None:
         if config.encoder.load_from is not None:
-            raise RuntimeError(
+            errmsg = (
                 "`initial_model_prefix` conflicts with `encoder.load_from`."
             )
+            raise RuntimeError(errmsg)
         if not config.initial_model_prefix.exists():
-            raise RuntimeError(
-                f"{config.initial_model_prefix}: Does not exist."
-            )
+            errmsg = f"{config.initial_model_prefix}: Does not exist."
+            raise RuntimeError(errmsg)
         if not config.initial_model_prefix.is_dir():
-            raise RuntimeError(
-                f"{config.initial_model_prefix}: Not a directory."
-            )
+            errmsg = f"{config.initial_model_prefix}: Not a directory."
+            raise RuntimeError(errmsg)
 
     if config.initial_model_index is not None:
         if config.initial_model_prefix is None:
-            raise RuntimeError(
-                "`initial_model_index` must be combined with `initial_model_prefix`."
+            errmsg = (
+                "`initial_model_index` must be combined with "
+                "`initial_model_prefix`."
             )
+            raise RuntimeError(errmsg)
         if config.initial_model_index < 0:
-            raise RuntimeError(
-                f"{config.initial_model_index}: An invalid initial model index."
+            errmsg = (
+                f"{config.initial_model_index}: "
+                "An invalid initial model index."
             )
+            raise RuntimeError(errmsg)
 
     num_samples = 0
     encoder_snapshot_path: Path | None = None
@@ -344,9 +396,10 @@ def _main(config: DictConfig) -> None:
                     config.initial_model_index = int(match[1])
                     continue
         if config.initial_model_index is None:
-            raise RuntimeError(
+            errmsg = (
                 f"{config.initial_model_prefix}: No model snapshot found."
             )
+            raise RuntimeError(errmsg)
 
         if config.initial_model_index == sys.maxsize:
             config.initial_model_index = 0
@@ -360,16 +413,19 @@ def _main(config: DictConfig) -> None:
         )
         assert encoder_snapshot_path is not None
         if not encoder_snapshot_path.exists():
-            raise RuntimeError(f"{encoder_snapshot_path}: Does not exist.")
+            errmsg = f"{encoder_snapshot_path}: Does not exist."
+            raise RuntimeError(errmsg)
         if not encoder_snapshot_path.is_file():
-            raise RuntimeError(f"{encoder_snapshot_path}: Not a file.")
+            errmsg = f"{encoder_snapshot_path}: Not a file."
+            raise RuntimeError(errmsg)
 
         decoder_snapshot_path = (
             config.initial_model_prefix / f"decoder{infix}.pth"
         )
         assert decoder_snapshot_path is not None
         if not decoder_snapshot_path.exists():
-            raise RuntimeError(f"{decoder_snapshot_path}: Does not exist.")
+            errmsg = f"{decoder_snapshot_path}: Does not exist."
+            raise RuntimeError(errmsg)
 
         optimizer_snapshot_path = (
             config.initial_model_prefix / f"optimizer{infix}.pth"
@@ -392,32 +448,33 @@ def _main(config: DictConfig) -> None:
             scheduler_snapshot_path = None
 
     if config.batch_size <= 0:
-        raise RuntimeError(
+        errmsg = (
             f"{config.batch_size}: `batch_size` must be a positive integer."
         )
-
-    if config.loss_function not in ("l1", "l2", "smooth_l1", "symlog"):
-        raise RuntimeError(
-            f"{config.loss_function}: An invalid value for `loss_function`."
-        )
+        raise RuntimeError(errmsg)
 
     if config.gradient_accumulation_steps < 1:
-        raise RuntimeError(
+        errmsg = (
             f"{config.gradient_accumulation_steps}: "
             "`gradient_accumulation_steps` must be an integer greater than 0."
         )
+        raise RuntimeError(errmsg)
 
     if config.max_gradient_norm <= 0.0:
-        raise RuntimeError(
-            f"{config.max_gradient_norm}: `max_gradient_norm` must be a positive real value."
+        errmsg = (
+            f"{config.max_gradient_norm}: "
+            "`max_gradient_norm` must be a positive real value."
         )
+        raise RuntimeError(errmsg)
 
     _config.optimizer.validate(config)
 
     if config.snapshot_interval < 0:
-        raise RuntimeError(
-            f"{config.snapshot_interval}: `snapshot_interval` must be a non-negative integer."
+        errmsg = (
+            f"{config.snapshot_interval}: "
+            "`snapshot_interval` must be a non-negative integer."
         )
+        raise RuntimeError(errmsg)
 
     output_prefix = Path(HydraConfig.get().runtime.output_dir)
 
@@ -436,6 +493,16 @@ def _main(config: DictConfig) -> None:
             logging.info(
                 "# of training samples consumed so far: %d", num_samples
             )
+        if config.rewrite_rooms is not None:
+            logging.info(
+                "Rewrite the rooms in the training data to: %d",
+                config.rewrite_rooms,
+            )
+        if config.rewrite_grades is not None:
+            logging.info(
+                "Rewrite the ranks in the training data to: %d",
+                config.rewrite_grades,
+            )
         logging.info("# of workers: %d", config.num_workers)
 
         _config.encoder.dump(config)
@@ -452,7 +519,6 @@ def _main(config: DictConfig) -> None:
 
         logging.info("Checkpointing: %s", config.checkpointing)
         logging.info("Batch size: %d", config.batch_size)
-        logging.info("Loss function: %s", config.loss_function)
         logging.info(
             "# of steps for gradient accumulation: %d",
             config.gradient_accumulation_steps,
@@ -504,7 +570,7 @@ def _main(config: DictConfig) -> None:
         activation_function=config.decoder.activation_function,
         dropout=config.decoder.dropout,
         num_layers=config.decoder.num_layers,
-        output_mode="scores",
+        output_mode="ranking",
         noise_init_std=0.0,
         device=torch.device("cpu"),
         dtype=dtype,
@@ -518,23 +584,15 @@ def _main(config: DictConfig) -> None:
         init_process_group(backend="nccl")
         network_tdm = DistributedDataParallel(network_tdm)
         network_tdm = nn.SyncBatchNorm.convert_sync_batchnorm(network_tdm)
+        assert isinstance(network_tdm, nn.Module)
 
-    identity = nn.Identity()
-    identity_tdm = TensorDictModule(
-        identity, in_keys=["decode"], out_keys=["grading_points"]
+    softmax = nn.Softmax(2)
+    softmax_tdm = TensorDictModule(
+        softmax, in_keys=["decode"], out_keys=["ranking_probs"]
     )
-    symexp_module = Symexp()
-    symexp_tdm = TensorDictModule(
-        symexp_module, in_keys=["decode"], out_keys=["grading_points"]
+    network_tdm_to_save = TensorDictSequential(
+        encoder_tdm, decoder_tdm, softmax_tdm
     )
-    if config.loss_function == "symlog":
-        network_tdm_to_save = TensorDictSequential(
-            encoder_tdm, decoder_tdm, symexp_tdm
-        )
-    else:
-        network_tdm_to_save = TensorDictSequential(
-            encoder_tdm, decoder_tdm, identity_tdm
-        )
 
     optimizer, scheduler = _config.optimizer.create(config, network_tdm)
 
@@ -601,67 +659,66 @@ def _main(config: DictConfig) -> None:
                 snapshots_path / f"lr-scheduler{infix}.pth",
             )
 
-        _encoder_state_dict = dump_object(
-            encoder_tdm,
-            [
-                dump_model(
-                    encoder,
-                    [],
-                    {
-                        "position_encoder": config.encoder.position_encoder,
-                        "dimension": config.encoder.dimension,
-                        "num_heads": config.encoder.num_heads,
-                        "dim_feedforward": config.encoder.dim_feedforward,
-                        "activation_function": config.encoder.activation_function,
-                        "dropout": config.encoder.dropout,
-                        "num_layers": config.encoder.num_layers,
-                        "checkpointing": False,
-                        "device": torch.device("cpu"),
-                        "dtype": dtype,
-                    },
-                )
-            ],
-            {"in_keys": ["sparse", "numeric"], "out_keys": ["encode"]},
-        )
-        _decoder_state_dict = dump_object(
-            decoder_tdm,
-            [
-                dump_model(
-                    decoder,
-                    [],
-                    {
-                        "input_dimension": config.encoder.dimension,
-                        "dimension": config.decoder.dimension,
-                        "activation_function": config.decoder.activation_function,
-                        "dropout": config.decoder.dropout,
-                        "num_layers": config.decoder.num_layers,
-                        "output_mode": "scores",
-                        "noise_init_std": 0.0,
-                        "device": torch.device("cpu"),
-                        "dtype": dtype,
-                    },
-                )
-            ],
-            {"in_keys": ["encode"], "out_keys": ["decode"]},
-        )
-        if config.loss_function == "symlog":
-            _decode_transformer_state_dict = dump_object(
-                symexp_tdm,
-                [dump_model(Symexp(), [], {})],
-                {"in_keys": ["decode"], "out_keys": ["grading_points"]},
-            )
-        else:
-            _decode_transformer_state_dict = dump_object(
-                identity_tdm,
-                [dump_model(nn.Identity(), [], {})],
-                {"in_keys": ["decode"], "out_keys": ["grading_points"]},
-            )
         network_tdm_state = dump_object(
             network_tdm_to_save,
             [
-                _encoder_state_dict,
-                _decoder_state_dict,
-                _decode_transformer_state_dict,
+                dump_object(
+                    encoder_tdm,
+                    [
+                        dump_model(
+                            encoder,
+                            [],
+                            {
+                                "position_encoder": config.encoder.position_encoder,
+                                "dimension": config.encoder.dimension,
+                                "num_heads": config.encoder.num_heads,
+                                "dim_feedforward": config.encoder.dim_feedforward,
+                                "activation_function": config.encoder.activation_function,
+                                "dropout": config.encoder.dropout,
+                                "num_layers": config.encoder.num_layers,
+                                "checkpointing": config.checkpointing,
+                                "device": torch.device("cpu"),
+                                "dtype": dtype,
+                            },
+                        ),
+                    ],
+                    {
+                        "in_keys": ["sparse", "numeric"],
+                        "out_keys": ["encode"],
+                    },
+                ),
+                dump_object(
+                    decoder_tdm,
+                    [
+                        dump_model(
+                            decoder,
+                            [],
+                            {
+                                "input_dimension": config.encoder.dimension,
+                                "dimension": config.decoder.dimension,
+                                "activation_function": config.decoder.activation_function,
+                                "dropout": config.decoder.dropout,
+                                "num_layers": config.decoder.num_layers,
+                                "output_mode": "ranking",
+                                "noise_init_std": 0.0,
+                                "device": torch.device("cpu"),
+                                "dtype": dtype,
+                            },
+                        ),
+                    ],
+                    {
+                        "in_keys": ["encode"],
+                        "out_keys": ["decode"],
+                    },
+                ),
+                dump_object(
+                    softmax_tdm,
+                    [dump_model(softmax, [2], {})],
+                    {
+                        "in_keys": ["decode"],
+                        "out_keys": ["ranking_probs"],
+                    },
+                ),
             ],
             {},
         )
@@ -675,17 +732,17 @@ def _main(config: DictConfig) -> None:
         torch.autograd.set_detect_anomaly(
             False
         )  # `True` for debbing purpose only.
-        _training(
+        _train(
             device=device,
             dtype=dtype,
             amp_dtype=amp_dtype,
             training_data=config.training_data,
+            rewrite_rooms=config.rewrite_rooms,
+            rewrite_grades=config.rewrite_grades,
             num_workers=config.num_workers,
             num_samples=num_samples,
-            celestial_scale=config.celestial_scale,
             network_tdm=network_tdm,
             batch_size=config.batch_size,
-            loss_function=config.loss_function,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
             max_gradient_norm=config.max_gradient_norm,
             optimizer=optimizer,
