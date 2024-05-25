@@ -3,11 +3,12 @@
 from pathlib import Path
 from argparse import ArgumentParser
 import sys
+from typing import TypeAlias
 
 
-_AnnotationKey = tuple[str, int, int, int, int, int, int]
-_GameKey = tuple[str, int]
-_RoundKey = tuple[str, int, int, int, int]
+_AnnotationKey: TypeAlias = tuple[str, int, int, int, int, int, int]
+_GameKey: TypeAlias = tuple[str, int]
+_RoundKey: TypeAlias = tuple[str, int, int, int, int]
 
 
 def _get_annotation_key(
@@ -63,7 +64,7 @@ def _parse(
         columns = line.split("\t")
         if len(columns) != 8:
             raise RuntimeError(f"An invalid line: {line}")
-        uuid, sparse, numeric, progression, _, _, _, _ = columns
+        uuid, sparse, numeric, progression, _, _, _, results = columns
 
         sparse_fields = [int(x) for x in sparse.split(",")]
         room = sparse_fields[0]
@@ -83,6 +84,7 @@ def _parse(
 
         annotation = (annotation_key, line)
         annotations.append(annotation)
+
     annotations.sort(key=lambda x: x[0])
 
     if len(annotations) == 0:
@@ -107,6 +109,10 @@ def _parse(
         game_key, round_key = _get_keys(uuid, sparse, numeric)
 
         if i + 1 < len(annotations):
+            # In the case of the final annotation. Note that in the case
+            # of the final annotation (when it does not fall under this
+            # `if` statement), it refers to the annotation for the final
+            # action of a game.
             next_line = annotations[i + 1][1]
             next_columns = next_line.split("\t")
             (
@@ -125,8 +131,11 @@ def _parse(
             )
 
             if game_key == next_game_key:
+                # The annotation is not for the final action of a game.
                 end_of_round = round_key != next_round_key
                 if end_of_round:
+                    # The annotation is for the final action of a round
+                    # but not for the final action of a game.
                     print(
                         f"{uuid}\t{sparse}\t{numeric}\t{progression}"
                         f"\t{candidates}\t{action}\t{next_sparse}"
@@ -134,6 +143,8 @@ def _parse(
                         f"\t{next_candidates}\t{round_summary}\t{round_result}"
                     )
                 else:
+                    # The annotation is for an action that is not the
+                    # final one of a round.
                     print(
                         f"{uuid}\t{sparse}\t{numeric}\t{progression}"
                         f"\t{candidates}\t{action}\t{next_sparse}"
@@ -144,9 +155,24 @@ def _parse(
                 i += 1
                 continue
 
+        # The annotation is for the final action of a game.
+
+        # In most cases, `results[10:14]`` (each player's score after
+        # settlement at the end of a game) agrees with
+        # `round_result[6:10]` (each player's score after settlement in
+        # the round where a player's final action in the game occurred).
+        # Therefore, in most cases, it is not necessary to output
+        # `results`, and it is enough to output `round_result` instead.
+        # However, there are very rare cases where `results[10:14]` does
+        # not agree with `round_result[6:10]`. A typical example is when
+        # a game ends without a player having a turn in the final round.
+        # In this case, the player's last action in the game is not in
+        # the final round of the game, so `round_result[6:10]` and
+        # `results[10:14]` will differ. To cover this exceptional case,
+        # `results` is output instead of `round_result`.
         print(
             f"{uuid}\t{sparse}\t{numeric}\t{progression}\t{candidates}"
-            f"\t{action}\t{round_summary}\t{round_result}"
+            f"\t{action}\t{round_summary}\t{results}"
         )
 
         i += 1
@@ -157,7 +183,6 @@ def _main() -> None:
     parser.add_argument(
         "--filter-by-room",
         choices=("bronze", "silver", "gold", "jade", "throne"),
-        default="gold",
         help="filter annotations by the specified room or above",
     )
     parser.add_argument(
