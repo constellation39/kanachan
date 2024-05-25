@@ -74,6 +74,8 @@ def _training(
     data_loader = DataLoader(
         path=training_data,
         num_skip_samples=num_samples,
+        rewrite_rooms=rewrite_rooms,
+        rewrite_grades=rewrite_grades,
         batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=(num_workers >= 1),
@@ -93,29 +95,6 @@ def _training(
     loss_function = nn.NLLLoss()
 
     for data in data_loader:
-        if rewrite_rooms is not None:
-            assert 0 <= rewrite_rooms and rewrite_rooms <= 4
-            sparse: Tensor = data["sparse"]
-            assert sparse.device == torch.device("cpu")
-            assert sparse.dtype == torch.int32
-            assert sparse.dim() == 2
-            assert sparse.size(0) == batch_size
-            assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
-            sparse[:, 0].fill_(rewrite_rooms)
-
-        if rewrite_grades is not None:
-            assert 0 <= rewrite_grades and rewrite_grades <= 15
-            sparse: Tensor = data["sparse"]
-            assert sparse.device == torch.device("cpu")
-            assert sparse.dtype == torch.int32
-            assert sparse.dim() == 2
-            assert sparse.size(0) == batch_size
-            assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
-            sparse[:, 2].fill_(7 + rewrite_grades)
-            sparse[:, 3].fill_(23 + rewrite_grades)
-            sparse[:, 4].fill_(39 + rewrite_grades)
-            sparse[:, 5].fill_(55 + rewrite_grades)
-
         data: TensorDict = data.to(device=device)
         with torch.autocast(**autocast_kwargs):
             network_tdm(data)

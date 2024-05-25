@@ -76,6 +76,8 @@ def _train(
     data_loader = DataLoader(
         path=training_data,
         num_skip_samples=num_samples,
+        rewrite_rooms=rewrite_rooms,
+        rewrite_grades=rewrite_grades,
         batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=(num_workers >= 1),
@@ -102,16 +104,11 @@ def _train(
         assert sparse.size(0) == batch_size
         assert sparse.size(1) == EOR_NUM_SPARSE_FEATURES
 
-        if rewrite_rooms is not None:
-            assert 0 <= rewrite_rooms and rewrite_rooms <= 4
-            sparse[:, 0].fill_(rewrite_rooms)
-
-        if rewrite_grades is not None:
-            assert 0 <= rewrite_grades and rewrite_grades <= 15
-            sparse[:, 2].fill_(7 + rewrite_grades)
-            sparse[:, 3].fill_(23 + rewrite_grades)
-            sparse[:, 4].fill_(39 + rewrite_grades)
-            sparse[:, 5].fill_(55 + rewrite_grades)
+        seat = sparse[:, 6] - 71
+        assert seat.device == torch.device("cpu")
+        assert seat.dtype == torch.int32
+        assert seat.dim() == 1
+        assert seat.size(0) == batch_size
 
         data: TensorDict = data.to(device=device)
         with torch.autocast(**autocast_kwargs):
@@ -124,12 +121,6 @@ def _train(
         assert decode.size(0) == batch_size
         assert decode.size(1) == 4
         assert decode.size(2) == 4
-
-        seat = sparse[:, 6] - 71
-        assert seat.device == torch.device("cpu")
-        assert seat.dtype == torch.int32
-        assert seat.dim() == 1
-        assert seat.size(0) == batch_size
 
         decode = decode[torch.arange(batch_size), seat]
         assert decode.device == device

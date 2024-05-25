@@ -42,6 +42,8 @@ class EpisodeReplayBuffer:
         training_data: Path,
         contiguous_training_data: bool,
         num_skip_samples: int,
+        rewrite_rooms: int | None,
+        rewrite_grades: int | None,
         get_reward: RewardFunction,
         max_size: int,
         batch_size: int,
@@ -63,6 +65,8 @@ class EpisodeReplayBuffer:
         self.__data_iterator = DataIterator(
             path=training_data,
             num_skip_samples=num_skip_samples,
+            rewrite_rooms=rewrite_rooms,
+            rewrite_grades=rewrite_grades,
             local_rank=local_rank,
         )
         self.__contiguous = contiguous_training_data
@@ -163,27 +167,24 @@ class EpisodeReplayBuffer:
             assert done.dtype == torch.bool
 
             td = TensorDict(
-                {
-                    "sparse": sparse.unsqueeze(0),
-                    "numeric": numeric.unsqueeze(0),
-                    "progression": progression.unsqueeze(0),
-                    "candidates": candidates.unsqueeze(0),
-                    "action": action.unsqueeze(0),
-                    "next": {
-                        "sparse": next_sparse.unsqueeze(0),
-                        "numeric": next_numeric.unsqueeze(0),
-                        "progression": next_progression.unsqueeze(0),
-                        "candidates": next_candidates.unsqueeze(0),
-                        "round_summary": round_summary.unsqueeze(0),
-                        "results": results.unsqueeze(0),
-                        "end_of_round": beginning_of_round.unsqueeze(0),
-                        "end_of_game": done.detach().clone().unsqueeze(0),
-                        "done": done.unsqueeze(0),
-                    },
-                },
+                {},
                 batch_size=1,
                 device=torch.device("cpu"),
             )
+            td.set("sparse", sparse.unsqueeze(0))
+            td.set("numeric", numeric.unsqueeze(0))
+            td.set("progression", progression.unsqueeze(0))
+            td.set("candidates", candidates.unsqueeze(0))
+            td.set("action", action.unsqueeze(0))
+            td.set(("next", "sparse"), next_sparse.unsqueeze(0))
+            td.set(("next", "numeric"), next_numeric.unsqueeze(0))
+            td.set(("next", "progression"), next_progression.unsqueeze(0))
+            td.set(("next", "candidates"), next_candidates.unsqueeze(0))
+            td.set(("next", "round_summary"), round_summary.unsqueeze(0))
+            td.set(("next", "round_result"), round_result.unsqueeze(0))
+            td.set(("next", "end_of_round"), end_of_round.unsqueeze(0))
+            td.set(("next", "end_of_game"), done.detach().clone().unsqueeze(0))
+            td.set(("next", "done"), done.unsqueeze(0))
             annotations.append(td)
 
             if done.item():

@@ -19,7 +19,8 @@ class Config:
     defaults: list[Any] = field(default_factory=lambda: _defaults)
     training_data: Path = MISSING
     contiguous_training_data: bool = False
-    rewrite_grades: int | None = None
+    rewrite_rooms: str | int | None = None
+    rewrite_grades: str | int | None = None
     num_workers: int | None = None
     replay_buffer_size: int = 0
     num_qr_intervals: int = 200

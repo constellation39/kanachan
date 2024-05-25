@@ -44,6 +44,7 @@ def _training(
     *,
     training_data: Path,
     contiguous_training_data: bool,
+    rewrite_rooms: int | None,
     rewrite_grades: int | None,
     num_workers: int,
     replay_buffer_size: int,
@@ -89,6 +90,8 @@ def _training(
             training_data=training_data,
             contiguous_training_data=contiguous_training_data,
             num_skip_samples=num_samples,
+            rewrite_rooms=rewrite_rooms,
+            rewrite_grades=rewrite_grades,
             # pylint: disable=undefined-variable
             get_reward=get_reward,  # type: ignore # noqa: F821
             max_size=replay_buffer_size,
@@ -99,6 +102,8 @@ def _training(
         data_loader = DataLoader(
             path=training_data,
             num_skip_samples=num_samples,
+            rewrite_rooms=rewrite_rooms,
+            rewrite_grades=rewrite_grades,
             # pylint: disable=undefined-variable
             get_reward=get_reward,  # type: ignore # noqa: F821
             batch_size=batch_size,
@@ -118,27 +123,6 @@ def _training(
     batch_count = 0
 
     for data in data_loader:
-        if rewrite_grades is not None:
-            assert 0 <= rewrite_grades and rewrite_grades <= 15
-            sparse: Tensor = data["sparse"]
-            assert sparse.dim() == 2
-            assert sparse.size(0) == batch_size
-            assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
-            assert sparse.dtype == torch.int32
-            sparse[:, 2].fill_(7 + rewrite_grades)
-            sparse[:, 3].fill_(23 + rewrite_grades)
-            sparse[:, 4].fill_(39 + rewrite_grades)
-            sparse[:, 5].fill_(55 + rewrite_grades)
-            next_sparse: Tensor = data["next", "sparse"]
-            assert next_sparse.dim() == 2
-            assert next_sparse.size(0) == batch_size
-            assert next_sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
-            assert next_sparse.dtype == torch.int32
-            next_sparse[:, 2].fill_(7 + rewrite_grades)
-            next_sparse[:, 3].fill_(23 + rewrite_grades)
-            next_sparse[:, 4].fill_(39 + rewrite_grades)
-            next_sparse[:, 5].fill_(55 + rewrite_grades)
-
         data = data.to(device=device)
         assert isinstance(data, TensorDict)
 
@@ -155,17 +139,23 @@ def _training(
                 )
                 _chunks.append(_chunk)
             data: TensorDict = torch.cat(_chunks)  # type: ignore
-        td_error: Tensor = data["td_error"]
+        data.del_("encode")
+        if data.get(("next", "encode"), None) is not None:
+            data.del_(("next", "encode"))
+        td_error = data["td_error"]
+        assert isinstance(td_error, Tensor)
         assert td_error.dim() == 1
         assert td_error.size(0) == batch_size
         td_error = td_error.mean()
 
-        q: Tensor = data["action_value"]
+        q = data["action_value"]
+        assert isinstance(q, Tensor)
         assert q.dim() == 2
         assert q.size(0) == batch_size
         assert q.size(1) == MAX_NUM_ACTION_CANDIDATES
 
-        action: Tensor = data["action"]
+        action = data["action"]
+        assert isinstance(action, Tensor)
         assert action.dim() == 1
         assert action.size(0) == batch_size
 
@@ -342,12 +332,48 @@ def _main(config: DictConfig) -> None:
         errmsg = f"{config.training_data}: Not a file."
         raise RuntimeError(errmsg)
 
+    if isinstance(config.rewrite_rooms, str):
+        config.rewrite_rooms = {
+            "bronze": 0,
+            "silver": 1,
+            "gold": 2,
+            "jade": 3,
+            "throne": 4,
+        }[config.rewrite_rooms]
+    if config.rewrite_rooms is not None and (
+        config.rewrite_rooms < 0 or 4 < config.rewrite_rooms
+    ):
+        errmsg = (
+            f"{config.rewrite_rooms}: "
+            "`rewrite_rooms` must be an integer within the range [0, 4]."
+        )
+        raise RuntimeError(errmsg)
+
+    if isinstance(config.rewrite_grades, str):
+        config.rewrite_grades = {
+            "novice1": 0,
+            "novice2": 1,
+            "novice3": 2,
+            "adept1": 3,
+            "adept2": 4,
+            "adept3": 5,
+            "expert1": 6,
+            "expert2": 7,
+            "expert3": 8,
+            "master1": 9,
+            "master2": 10,
+            "master3": 11,
+            "saint1": 12,
+            "saint2": 13,
+            "saint3": 14,
+            "celestial": 15,
+        }[config.rewrite_grades]
     if config.rewrite_grades is not None and (
         config.rewrite_grades < 0 or 15 < config.rewrite_grades
     ):
         errmsg = (
-            f"{config.rewrite_grades}: `rewrite_grades` must be an"
-            " integer within the range [0, 15]."
+            f"{config.rewrite_grades}: "
+            "`rewrite_grades` must be an integer within the range [0, 15]."
         )
         raise RuntimeError(errmsg)
 
@@ -669,6 +695,11 @@ def _main(config: DictConfig) -> None:
         logging.info(
             "Training data is contiguous: %s", config.contiguous_training_data
         )
+        if config.rewrite_rooms is not None:
+            logging.info(
+                "Rewrite the rooms in the training data to: %d",
+                config.rewrite_rooms,
+            )
         if config.rewrite_grades is not None:
             logging.info(
                 "Rewrite the grades in the training data to: %d",
@@ -1106,6 +1137,7 @@ def _main(config: DictConfig) -> None:
         _training(
             training_data=config.training_data,
             contiguous_training_data=config.contiguous_training_data,
+            rewrite_rooms=config.rewrite_rooms,
             rewrite_grades=config.rewrite_grades,
             num_workers=config.num_workers,
             replay_buffer_size=config.replay_buffer_size,

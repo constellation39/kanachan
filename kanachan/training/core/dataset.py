@@ -11,6 +11,8 @@ class Dataset(IterableDataset):
         path: str | Path,
         iterator_class: Type,
         num_skip_samples: int,
+        rewrite_rooms: int | None,
+        rewrite_grades: int | None,
     ) -> None:
         super().__init__()
         if isinstance(path, str):
@@ -21,12 +23,16 @@ class Dataset(IterableDataset):
         self.__path = path
         self.__iterator_class = iterator_class
         self.__num_skip_samples = num_skip_samples
+        self.__rewrite_rooms = rewrite_rooms
+        self.__rewrite_grades = rewrite_grades
 
     def __iter__(self) -> Type:
         _, _, local_rank = get_distributed_environment()
         return self.__iterator_class(
             path=self.__path,
             num_skip_samples=self.__num_skip_samples,
+            rewrite_rooms=self.__rewrite_rooms,
+            rewrite_grades=self.__rewrite_grades,
             local_rank=local_rank,
         )
 

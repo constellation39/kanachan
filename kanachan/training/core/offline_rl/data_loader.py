@@ -39,6 +39,8 @@ class DataLoader:
         *,
         path: Path,
         num_skip_samples: int,
+        rewrite_rooms: int | None,
+        rewrite_grades: int | None,
         get_reward: RewardFunction,
         batch_size: int = 1,
         num_workers: int = 0,
@@ -49,6 +51,8 @@ class DataLoader:
             path=path,
             iterator_class=DataIterator,
             num_skip_samples=num_skip_samples,
+            rewrite_rooms=rewrite_rooms,
+            rewrite_grades=rewrite_grades,
         )
         world_size, _, _ = get_distributed_environment()
         data_loader = torch.utils.data.DataLoader(

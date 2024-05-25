@@ -15,14 +15,32 @@ from kanachan.constants import (
 
 class DataIterator:
     def __init__(
-        self, path: Path, num_skip_samples: int, local_rank: int
+        self,
+        path: Path,
+        num_skip_samples: int,
+        rewrite_rooms: int | None,
+        rewrite_grades: int | None,
+        local_rank: int,
     ) -> None:
+        if num_skip_samples < 0:
+            errmsg = f"{num_skip_samples}: An invalid value for `num_skip_samples`."
+            raise ValueError(errmsg)
+        if rewrite_rooms is not None and (rewrite_rooms < 0 or rewrite_rooms > 4):
+            errmsg = f"{rewrite_rooms}: An invalid value for `rewrite_rooms`."
+            raise ValueError(errmsg)
+        if rewrite_grades is not None and (rewrite_grades < 0 or rewrite_grades > 14):
+            errmsg = f"{rewrite_grades}: An invalid value for `rewrite_grades`."
+            raise ValueError(errmsg)
+
         if path.suffix == ".gz":
             self.__fp = gzip.open(path, mode="rt", encoding="UTF-8")
         elif path.suffix == ".bz2":
             self.__fp = bz2.open(path, mode="rt", encoding="UTF-8")
         else:
             self.__fp = open(path, encoding="UTF-8")
+
+        self.__rewrite_rooms = rewrite_rooms
+        self.__rewrite_grades = rewrite_grades
 
         worker_info = get_worker_info()
 
@@ -63,6 +81,13 @@ class DataIterator:
                 errmsg = f"{uuid}: {x}"
                 raise RuntimeError(errmsg)
         sparse = torch.tensor(sparse, device="cpu", dtype=torch.int32)
+        if self.__rewrite_rooms is not None:
+            sparse[0] = self.__rewrite_rooms
+        if self.__rewrite_grades is not None:
+            sparse[2] = 7 + self.__rewrite_grades
+            sparse[3] = 23 + self.__rewrite_grades
+            sparse[4] = 39 + self.__rewrite_grades
+            sparse[5] = 55 + self.__rewrite_grades
 
         numeric = [int(x) for x in numeric.split(",")]
         if len(numeric) != EOR_NUM_NUMERIC_FEATURES:
