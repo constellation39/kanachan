@@ -126,6 +126,34 @@ class QRDecoder(nn.Module):
         return theta
 
 
+def _get_a_star(source_network: nn.Module, data: TensorDict) -> Tensor:
+    batch_size = data.size(0)
+    assert isinstance(batch_size, int)
+
+    source_network.requires_grad_(False)
+    with torch.no_grad():
+        source_network(data["next"])
+    source_network.requires_grad_(True)
+
+    next_theta = data["next", "qr_action_value"]
+    assert isinstance(next_theta, Tensor)
+    assert next_theta.dim() == 3
+    assert next_theta.size(0) == batch_size
+    assert next_theta.size(1) == MAX_NUM_ACTION_CANDIDATES
+    num_qr_intervals = next_theta.size(2)
+
+    next_q = torch.sum(next_theta * (1.0 / num_qr_intervals), dim=2)
+    assert next_q.dim() == 2
+    assert next_q.size(0) == batch_size
+    assert next_q.size(1) == MAX_NUM_ACTION_CANDIDATES
+
+    a_star = next_q.argmax(1)
+    assert a_star.dim() == 1
+    assert a_star.size(0) == batch_size
+
+    return a_star
+
+
 def compute_td_error(
     *,
     source_network: nn.Module,
@@ -134,29 +162,29 @@ def compute_td_error(
     discount_factor: float,
     kappa: float,
 ) -> None:
-    batch_size: int = data.size(0)  # type: ignore
+    batch_size = data.size(0)
+    assert isinstance(batch_size, int)
 
-    if data.get("qr_action_value", None) is None:
-        source_network(data)
+    a_star = _get_a_star(source_network, data)
+
+    source_network(data)
+
     if target_network is None:
-        if data.get(("next", "qr_action_value"), None) is None:
-            source_network(data["next"])
+        source_network(data["next"])
     else:
-        if data.get(("next", "target_qr_action_value"), None) is None:
-            copy = data.detach().clone()
-            with torch.no_grad():
-                target_network(copy["next"])
-                data["next", "target_qr_action_value"] = copy[
-                    "next", "qr_action_value"
-                ]
+        with torch.no_grad():
+            target_network(data["next"])
 
-    theta: Tensor = data["qr_action_value"]
+    theta = data["qr_action_value"]
+    assert isinstance(theta, Tensor)
     assert theta.dim() == 3
     assert theta.size(0) == batch_size
     assert theta.size(1) == MAX_NUM_ACTION_CANDIDATES
     num_qr_intervals = theta.size(2)
 
-    action: Tensor = data["action"]
+    action = data["action"]
+    assert isinstance(action, Tensor)
+    assert action.dtype == torch.int32
     assert action.dim() == 1
     assert action.size(0) == batch_size
 
@@ -169,14 +197,10 @@ def compute_td_error(
     assert q.dim() == 2
     assert q.size(0) == batch_size
     assert q.size(1) == MAX_NUM_ACTION_CANDIDATES
-    if data.get("action_value", None) is None:
-        data["action_value"] = q
+    data["action_value"] = q
 
-    next_theta: Tensor
-    if target_network is None:
-        next_theta = data["next", "qr_action_value"]
-    else:
-        next_theta = data["next", "target_qr_action_value"]
+    next_theta = data["next", "qr_action_value"]
+    assert isinstance(next_theta, Tensor)
     assert next_theta.dim() == 3
     assert next_theta.size(0) == batch_size
     assert next_theta.size(1) == MAX_NUM_ACTION_CANDIDATES
@@ -186,40 +210,16 @@ def compute_td_error(
     assert next_q.dim() == 2
     assert next_q.size(0) == batch_size
     assert next_q.size(1) == MAX_NUM_ACTION_CANDIDATES
-    if target_network is None:
-        data["next", "action_value"] = next_q
-    else:
-        data["next", "target_action_value"] = next_q
+    data["next", "action_value"] = next_q
 
-    def get_a_star() -> Tensor:
-        if data.get(("next", "qr_action_value"), None) is None:
-            with torch.no_grad():
-                source_network(data["next"])
-
-        _next_theta: Tensor = data["next", "qr_action_value"]
-        assert _next_theta.dim() == 3
-        assert _next_theta.size(0) == batch_size
-        assert _next_theta.size(1) == MAX_NUM_ACTION_CANDIDATES
-        assert _next_theta.size(2) == num_qr_intervals
-
-        _next_q = torch.sum(_next_theta * (1.0 / num_qr_intervals), dim=2)
-        assert _next_q.dim() == 2
-        assert _next_q.size(0) == batch_size
-        assert _next_q.size(1) == MAX_NUM_ACTION_CANDIDATES
-
-        _a_star = _next_q.argmax(1)
-        assert _a_star.dim() == 1
-        assert _a_star.size(0) == batch_size
-
-        return _a_star
-
-    a_star = get_a_star()
-
-    reward: Tensor = data["next", "reward"]
+    reward = data["next", "reward"]
+    assert isinstance(reward, Tensor)
     assert reward.dim() == 1
     assert reward.size(0) == batch_size
 
-    done: Tensor = data["next", "done"]
+    done = data["next", "done"]
+    assert isinstance(done, Tensor)
+    assert done.dtype == torch.bool
     assert done.dim() == 1
     assert done.size(0) == batch_size
 
