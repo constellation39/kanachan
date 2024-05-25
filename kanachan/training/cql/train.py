@@ -21,10 +21,7 @@ from torch.distributed import init_process_group, ReduceOp, all_reduce
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
-from kanachan.constants import (
-    MAX_NUM_ACTIVE_SPARSE_FEATURES,
-    MAX_NUM_ACTION_CANDIDATES,
-)
+from kanachan.constants import MAX_NUM_ACTION_CANDIDATES
 from kanachan.training.common import (
     get_distributed_environment,
     get_gradient,
@@ -189,19 +186,19 @@ def _training(
         _loss_regularizer = loss_regularizer.detach().clone()
         if world_size >= 2:
             all_reduce(_loss_regularizer, ReduceOp.AVG)
-        loss_regularizer_to_display: float = _loss_regularizer.item()
+        loss_regularizer_to_display = float(_loss_regularizer.item())
 
         loss_td_error = 0.5 * td_error
         _loss_td_error = loss_td_error.detach().clone()
         if world_size >= 2:
             all_reduce(_loss_td_error, ReduceOp.AVG)
-        loss_td_error_to_display: float = _loss_td_error.item()
+        loss_td_error_to_display = float(_loss_td_error.item())
 
         loss = loss_regularizer + loss_td_error
         _loss = loss.detach().clone()
         if world_size >= 2:
             all_reduce(_loss, ReduceOp.AVG)
-        loss_to_display: float = _loss.item()
+        loss_to_display = float(_loss.item())
 
         if math.isnan(loss_to_display):
             errmsg = "Loss becomes NaN."
@@ -232,7 +229,7 @@ def _training(
                 grad_scaler.unscale_(optimizer)
             gradient = get_gradient(source_network)
             # pylint: disable=not-callable
-            gradient_norm: float = torch.linalg.vector_norm(gradient).item()
+            gradient_norm = float(torch.linalg.vector_norm(gradient).item())
             nn.utils.clip_grad_norm_(
                 source_network.parameters(),
                 max_gradient_norm,
@@ -276,12 +273,12 @@ def _training(
                 )
                 summary_writer.add_scalar("Q", q_to_display, num_samples)
                 summary_writer.add_scalar(
-                    "Loss (regularizer)",
+                    "Loss (Regularizer)",
                     loss_regularizer_to_display,
                     num_samples,
                 )
                 summary_writer.add_scalar(
-                    "Loss (TD error)", loss_td_error_to_display, num_samples
+                    "Loss (TD Error)", loss_td_error_to_display, num_samples
                 )
                 summary_writer.add_scalar("Loss", loss_to_display, num_samples)
                 summary_writer.add_scalar(
@@ -301,12 +298,12 @@ def _training(
                 )
                 summary_writer.add_scalar("Q", q_to_display, num_samples)
                 summary_writer.add_scalar(
-                    "Loss (regularizer)",
+                    "Loss (Regularizer)",
                     loss_regularizer_to_display,
                     num_samples,
                 )
                 summary_writer.add_scalar(
-                    "Loss (TD error)", loss_td_error_to_display, num_samples
+                    "Loss (TD Error)", loss_td_error_to_display, num_samples
                 )
                 summary_writer.add_scalar("Loss", loss_to_display, num_samples)
 
@@ -362,8 +359,8 @@ def _main(config: DictConfig) -> None:
             raise RuntimeError(errmsg)
         if config.num_workers > 0:
             errmsg = (
-                f"{config.num_workers}: An invalid number of workers"
-                " for CPU."
+                f"{config.num_workers}: An invalid number of workers "
+                "for CPU."
             )
             raise RuntimeError(errmsg)
     else:
@@ -381,8 +378,8 @@ def _main(config: DictConfig) -> None:
 
     if config.replay_buffer_size < 0:
         errmsg = (
-            f"{config.replay_buffer_size}: `replay_buffer_size` must be"
-            " a non-negative integer."
+            f"{config.replay_buffer_size}: `replay_buffer_size` must be "
+            "a non-negative integer."
         )
         raise RuntimeError(errmsg)
     if config.contiguous_training_data and config.replay_buffer_size == 0:
@@ -395,8 +392,8 @@ def _main(config: DictConfig) -> None:
 
     if config.num_qr_intervals <= 0:
         errmsg = (
-            f"{config.num_qr_intervals}: `num_qr_intervals` must be a"
-            " positive integer."
+            f"{config.num_qr_intervals}: `num_qr_intervals` must be a "
+            "positive integer."
         )
         raise RuntimeError(errmsg)
 
@@ -416,14 +413,14 @@ def _main(config: DictConfig) -> None:
     if config.initial_model_index is not None:
         if config.initial_model_prefix is None:
             errmsg = (
-                "`initial_model_index` must be combined with"
-                " `initial_model_prefix`."
+                "`initial_model_index` must be combined with "
+                "`initial_model_prefix`."
             )
             raise RuntimeError(errmsg)
         if config.initial_model_index < 0:
             errmsg = (
-                f"{config.initial_model_index}: An invalid initial model"
-                " index."
+                f"{config.initial_model_index}: "
+                "An invalid initial model index."
             )
             raise RuntimeError(errmsg)
 
@@ -580,8 +577,8 @@ def _main(config: DictConfig) -> None:
 
     if config.discount_factor <= 0.0 or 1.0 < config.discount_factor:
         errmsg = (
-            f"{config.discount_factor}: An invalid value for"
-            " `discount_factor`."
+            f"{config.discount_factor}: "
+            "An invalid value for `discount_factor`."
         )
         raise RuntimeError(errmsg)
 
@@ -617,8 +614,8 @@ def _main(config: DictConfig) -> None:
 
     if config.max_gradient_norm <= 0.0:
         errmsg = (
-            f"{config.max_gradient_norm}: `max_gradient_norm` must be a"
-            " positive real value."
+            f"{config.max_gradient_norm}: "
+            "`max_gradient_norm` must be a positive real value."
         )
         raise RuntimeError(errmsg)
 
@@ -645,14 +642,16 @@ def _main(config: DictConfig) -> None:
 
     if config.snapshot_interval < 0:
         errmsg = (
-            f"{config.snapshot_interval}: `snapshot_interval` must be a"
-            " non-negative integer."
+            f"{config.snapshot_interval}: "
+            "`snapshot_interval` must be a non-negative integer."
         )
         raise RuntimeError(errmsg)
 
     output_prefix = Path(HydraConfig.get().runtime.output_dir)
 
     if local_rank == 0:
+        logging.info("Model type: conservative Q-learning (CQL)")
+
         _config.device.dump(
             world_size=world_size,
             rank=rank,
@@ -777,6 +776,7 @@ def _main(config: DictConfig) -> None:
         dim_feedforward=config.encoder.dim_feedforward,
         activation_function=config.encoder.activation_function,
         dropout=config.encoder.dropout,
+        layer_normalization=config.encoder.layer_normalization,
         num_layers=config.encoder.num_layers,
         checkpointing=config.checkpointing,
         device=torch.device("cpu"),
@@ -792,6 +792,7 @@ def _main(config: DictConfig) -> None:
         dimension=config.decoder.dimension,
         activation_function=config.decoder.activation_function,
         dropout=config.decoder.dropout,
+        layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         num_qr_intervals=config.num_qr_intervals,
         dueling_architecture=config.dueling_architecture,
@@ -824,6 +825,7 @@ def _main(config: DictConfig) -> None:
             dim_feedforward=config.encoder.dim_feedforward,
             activation_function=config.encoder.activation_function,
             dropout=config.encoder.dropout,
+            layer_normalization=config.encoder.layer_normalization,
             num_layers=config.encoder.num_layers,
             checkpointing=config.checkpointing,
             device=torch.device("cpu"),
@@ -839,6 +841,7 @@ def _main(config: DictConfig) -> None:
             dimension=config.decoder.dimension,
             activation_function=config.decoder.activation_function,
             dropout=config.decoder.dropout,
+            layer_normalization=config.decoder.layer_normalization,
             num_layers=config.decoder.num_layers,
             num_qr_intervals=config.num_qr_intervals,
             dueling_architecture=config.dueling_architecture,
@@ -1028,6 +1031,7 @@ def _main(config: DictConfig) -> None:
                                 "dim_feedforward": config.encoder.dim_feedforward,
                                 "activation_function": config.encoder.activation_function,
                                 "dropout": config.encoder.dropout,
+                                "layer_normalization": config.encoder.layer_normalization,
                                 "num_layers": config.encoder.num_layers,
                                 "checkpointing": config.checkpointing,
                                 "device": torch.device("cpu"),
@@ -1056,6 +1060,7 @@ def _main(config: DictConfig) -> None:
                                 "dimension": config.decoder.dimension,
                                 "activation_function": config.decoder.activation_function,
                                 "dropout": config.decoder.dropout,
+                                "layer_normalization": config.decoder.layer_normalization,
                                 "num_layers": config.decoder.num_layers,
                                 "num_qr_intervals": config.num_qr_intervals,
                                 "dueling_architecture": config.dueling_architecture,

@@ -9,6 +9,7 @@ from kanachan.constants import (
     MAX_LENGTH_OF_PROGRESSION_FEATURES,
     NUM_TYPES_OF_ACTIONS,
     MAX_NUM_ACTION_CANDIDATES,
+    ENCODER_WIDTH,
 )
 from kanachan import piecewise_linear_encoding
 from kanachan.nn import PositionalEncoding, PositionEmbedding
@@ -24,6 +25,7 @@ class Encoder(nn.Module):
         dim_feedforward: int,
         activation_function: str,
         dropout: float,
+        layer_normalization: bool,
         num_layers: int,
         checkpointing: bool,
         device: torch.device,
@@ -100,6 +102,12 @@ class Encoder(nn.Module):
             dtype=dtype,
         )
 
+        _layer_normalization: nn.LayerNorm | None = None
+        if layer_normalization:
+            _layer_normalization = nn.LayerNorm(
+                [ENCODER_WIDTH, self.__dimension]
+            )
+
         encoder_layer = nn.TransformerEncoderLayer(
             self.__dimension,
             num_heads,
@@ -110,7 +118,9 @@ class Encoder(nn.Module):
             device=device,
             dtype=dtype,
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers)
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers, norm=_layer_normalization
+        )
 
         self.checkpointing = checkpointing
 
@@ -199,5 +209,6 @@ class Encoder(nn.Module):
             )  # type: ignore
         else:
             encode: Tensor = self.encoder(embedding)
+        assert encode.size() == (batch_size, ENCODER_WIDTH, self.__dimension)
 
         return encode

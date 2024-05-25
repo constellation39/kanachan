@@ -21,10 +21,7 @@ from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 import kanachan.training.core.config as _config
 
-from kanachan.constants import (
-    MAX_NUM_ACTIVE_SPARSE_FEATURES,
-    MAX_NUM_ACTION_CANDIDATES,
-)
+from kanachan.constants import MAX_NUM_ACTION_CANDIDATES
 
 # pylint: disable=unused-import
 import kanachan.training.bc.config
@@ -154,10 +151,14 @@ def _training(
         batch_count += 1
 
         if batch_count % gradient_accumulation_steps == 0:
-            if is_gradient_nan(network_tdm):
-                logging.warning(
-                    "Skip an optimization step because of NaN in the gradient."
-                )
+            is_grad_nan = is_gradient_nan(network_tdm)
+            if world_size >= 2:
+                all_reduce(is_grad_nan)
+            if is_grad_nan.item() >= 1:
+                if local_rank == 0:
+                    logging.warning(
+                        "Skip an optimization step because of NaN in the gradient."
+                    )
                 optimizer.zero_grad()
                 continue
 
@@ -320,12 +321,6 @@ def _main(config: DictConfig) -> None:
                 "`initial_model_prefix` conflicts with `encoder.load_from`."
             )
             raise RuntimeError(errmsg)
-        if config.initial_policy_decoder is not None:
-            errmsg = (
-                "`initial_model_prefix` conflicts with"
-                " `initial_policy_decoder`."
-            )
-            raise RuntimeError(errmsg)
         if not config.initial_model_prefix.exists():
             errmsg = f"{config.initial_model_prefix}: Does not exist."
             raise RuntimeError(errmsg)
@@ -458,6 +453,8 @@ def _main(config: DictConfig) -> None:
     output_prefix = Path(HydraConfig.get().runtime.output_dir)
 
     if local_rank == 0:
+        logging.info("Model type: behavioral cloning (BC)")
+
         _config.device.dump(
             world_size=world_size,
             rank=rank,
@@ -472,7 +469,6 @@ def _main(config: DictConfig) -> None:
             logging.info(
                 "# of training samples consumed so far: %d", num_samples
             )
-        logging.info("# of workers: %d", config.num_workers)
         if config.rewrite_rooms is not None:
             logging.info(
                 "Rewrite the rooms in the training data to: %d",
@@ -483,6 +479,7 @@ def _main(config: DictConfig) -> None:
                 "Rewrite the grades in the training data to: %d",
                 config.rewrite_grades,
             )
+        logging.info("# of workers: %d", config.num_workers)
 
         _config.encoder.dump(config)
 
@@ -534,6 +531,7 @@ def _main(config: DictConfig) -> None:
         dim_feedforward=config.encoder.dim_feedforward,
         activation_function=config.encoder.activation_function,
         dropout=config.encoder.dropout,
+        layer_normalization=config.encoder.layer_normalization,
         num_layers=config.encoder.num_layers,
         checkpointing=config.checkpointing,
         device=torch.device("cpu"),
@@ -549,6 +547,7 @@ def _main(config: DictConfig) -> None:
         dimension=config.decoder.dimension,
         activation_function=config.decoder.activation_function,
         dropout=config.decoder.dropout,
+        layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="candidates",
         noise_init_std=0.0,
@@ -664,6 +663,7 @@ def _main(config: DictConfig) -> None:
                                 "dim_feedforward": config.encoder.dim_feedforward,
                                 "activation_function": config.encoder.activation_function,
                                 "dropout": config.encoder.dropout,
+                                "layer_normalization": config.encoder.layer_normalization,
                                 "num_layers": config.encoder.num_layers,
                                 "checkpointing": config.checkpointing,
                                 "device": torch.device("cpu"),
@@ -692,6 +692,7 @@ def _main(config: DictConfig) -> None:
                                 "dimension": config.decoder.dimension,
                                 "activation_function": config.decoder.activation_function,
                                 "dropout": config.decoder.dropout,
+                                "layer_normalization": config.decoder.layer_normalization,
                                 "num_layers": config.decoder.num_layers,
                                 "output_mode": "candidates",
                                 "noise_init_std": 0.0,

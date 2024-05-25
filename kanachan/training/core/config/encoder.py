@@ -14,6 +14,7 @@ class BertTinyEncoderConfig:
     activation_function: str = "gelu"
     dropout: float = 0.1
     num_layers: int = 2
+    layer_normalization: bool = False
     load_from: None | Path = None
 
 
@@ -26,6 +27,7 @@ class BertMiniEncoderConfig:
     activation_function: str = "gelu"
     dropout: float = 0.1
     num_layers: int = 4
+    layer_normalization: bool = False
     load_from: None | Path = None
 
 
@@ -38,6 +40,7 @@ class BertSmallEncoderConfig:
     activation_function: str = "gelu"
     dropout: float = 0.1
     num_layers: int = 4
+    layer_normalization: bool = False
     load_from: None | Path = None
 
 
@@ -50,6 +53,7 @@ class BertMediumEncoderConfig:
     activation_function: str = "gelu"
     dropout: float = 0.1
     num_layers: int = 8
+    layer_normalization: bool = False
     load_from: None | Path = None
 
 
@@ -62,6 +66,7 @@ class BertBaseEncoderConfig:
     activation_function: str = "gelu"
     dropout: float = 0.1
     num_layers: int = 12
+    layer_normalization: bool = False
     load_from: None | Path = None
 
 
@@ -74,6 +79,7 @@ class BertLargeEncoderConfig:
     activation_function: str = "gelu"
     dropout: float = 0.1
     num_layers: int = 24
+    layer_normalization: bool = False
     load_from: None | Path = None
 
 
@@ -176,5 +182,9 @@ def dump(config: Any) -> None:
     )
     logging.info("Dropout for encoder: %f", config.encoder.dropout)
     logging.info("# of encoder layers: %d", config.encoder.num_layers)
+    logging.info(
+        "Layer normalization for encoder: %s",
+        config.encoder.layer_normalization,
+    )
     if config.encoder.load_from is not None:
         logging.info("Load encoder from: %s", config.encoder.load_from)

@@ -21,6 +21,7 @@ class Decoder(nn.Module):
         dimension: int | None,
         activation_function: str | None,
         dropout: float | None,
+        layer_normalization: bool,
         num_layers: int,
         output_mode: str,
         noise_init_std: float,
@@ -85,6 +86,9 @@ class Decoder(nn.Module):
                 raise AssertionError(activation_function)
             assert dropout is not None
             layers["dropout0"] = nn.Dropout(p=dropout)
+            if layer_normalization:
+                assert dimension is not None
+                layers["layer_normalization0"] = nn.LayerNorm([dimension])
 
         for i in range(1, num_layers):
             assert dimension is not None
@@ -104,6 +108,10 @@ class Decoder(nn.Module):
                 else:
                     raise AssertionError(activation_function)
                 layers[f"dropout{i}"] = nn.Dropout(p=dropout)
+                if layer_normalization:
+                    layers[f"layer_normalization{i}"] = nn.LayerNorm(
+                        [dimension]
+                    )
 
         self.layers = nn.Sequential(layers)
 
