@@ -12,7 +12,7 @@ from kanachan.constants import (
     MAX_NUM_ACTION_CANDIDATES,
     NUM_TYPES_OF_ROUND_SUMMARY,
     MAX_NUM_ROUND_SUMMARY,
-    RL_NUM_RESULTS,
+    NUM_RESULTS,
 )
 import kanachan.simulation
 from kanachan.training.core.rl import RewardFunction
@@ -89,33 +89,57 @@ def simulate(
                 break
         assert episode_meta_data is not None
 
+        game_scores = episode_meta_data["scores"]
+        assert isinstance(game_scores, list)
+        assert len(game_scores) == 4
+        assert all(isinstance(game_score, int) for game_score in game_scores)
+
         episode = episode_meta_data["episode"]
         assert isinstance(episode, TensorDictBase)
         episode = episode.to(torch.device("cpu")).to_tensordict()
+        assert isinstance(episode, TensorDict)
 
-        length = int(episode.size(0))  # type: ignore
+        length = episode.size(0)
+        assert isinstance(length, int)
 
-        sparse: Tensor = episode["sparse"]
+        sparse = episode["sparse"]
+        assert isinstance(sparse, Tensor)
+        assert sparse.device == torch.device("cpu")
+        assert sparse.dtype == torch.int32
         assert sparse.dim() == 2
         assert sparse.size(0) == length
         assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
-        numeric: Tensor = episode["numeric"]
+        numeric = episode["numeric"]
+        assert isinstance(numeric, Tensor)
+        assert numeric.device == torch.device("cpu")
+        assert numeric.dtype == torch.int32
         assert numeric.dim() == 2
         assert numeric.size(0) == length
         assert numeric.size(1) == NUM_NUMERIC_FEATURES
-        progression: Tensor = episode["progression"]
+        progression = episode["progression"]
+        assert isinstance(progression, Tensor)
+        assert progression.device == torch.device("cpu")
+        assert progression.dtype == torch.int32
         assert progression.dim() == 2
         assert progression.size(0) == length
         assert progression.size(1) == MAX_LENGTH_OF_PROGRESSION_FEATURES
-        candidates: Tensor = episode["candidates"]
+        candidates = episode["candidates"]
+        assert isinstance(candidates, Tensor)
+        assert candidates.device == torch.device("cpu")
+        assert candidates.dtype == torch.int32
         assert candidates.dim() == 2
         assert candidates.size(0) == length
         assert candidates.size(1) == MAX_NUM_ACTION_CANDIDATES
-        action_index: Tensor = episode["action"]
+        action_index = episode["action"]
+        assert isinstance(action_index, Tensor)
+        assert action_index.device == torch.device("cpu")
+        assert action_index.dtype == torch.int32
         assert action_index.dim() == 1
         assert action_index.size(0) == length
-        log_prob: Tensor | None = episode.get("sample_log_prob", None)
+        log_prob = episode.get("sample_log_prob", None)
         if log_prob is not None:
+            assert log_prob.device == torch.device("cpu")
+            assert log_prob.dtype == torch.float64
             assert log_prob.dim() == 1
             assert log_prob.size(0) == length
 
@@ -145,7 +169,7 @@ def simulate(
         )
 
         episode["next", "results"] = torch.full(
-            (length, RL_NUM_RESULTS),
+            (length, NUM_RESULTS),
             0,
             device=torch.device("cpu"),
             dtype=torch.int32,
@@ -182,18 +206,26 @@ def simulate(
                 episode["next", "results"][t][3] = round_results[round_key][
                     "delta_scores"
                 ][3]
-                episode["next", "results"][t][4] = round_results[round_key][
-                    "scores"
-                ][0]
-                episode["next", "results"][t][5] = round_results[round_key][
-                    "scores"
-                ][1]
+                # TODO
+                episode["next", "results"][t][4] = 0
+                # TODO
+                episode["next", "results"][t][5] = 0
                 episode["next", "results"][t][6] = round_results[round_key][
                     "scores"
-                ][2]
+                ][0]
                 episode["next", "results"][t][7] = round_results[round_key][
                     "scores"
+                ][1]
+                episode["next", "results"][t][8] = round_results[round_key][
+                    "scores"
+                ][2]
+                episode["next", "results"][t][9] = round_results[round_key][
+                    "scores"
                 ][3]
+                episode["next", "results"][t][10] = game_scores[0]
+                episode["next", "results"][t][11] = game_scores[1]
+                episode["next", "results"][t][12] = game_scores[2]
+                episode["next", "results"][t][13] = game_scores[3]
                 episode["next", "end_of_round"][t] = True
         episode["next", "end_of_game"][-1] = True
         episode["next", "done"] = (
@@ -224,6 +256,7 @@ def simulate(
 
         _episodes.append(episode.detach().clone().cpu())
 
-    episodes: TensorDict = torch.cat(_episodes).to_tensordict()  # type: ignore
+    episodes = torch.cat(_episodes).to_tensordict()  # type: ignore
+    assert isinstance(episodes, TensorDict)
 
     return episodes

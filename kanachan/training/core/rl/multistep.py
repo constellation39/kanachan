@@ -10,7 +10,7 @@ from kanachan.constants import (
     NUM_TYPES_OF_ACTIONS,
     MAX_NUM_ACTION_CANDIDATES,
     MAX_NUM_ROUND_SUMMARY,
-    RL_NUM_RESULTS,
+    NUM_RESULTS,
 )
 
 
@@ -46,7 +46,7 @@ def make_multistep(
     results: Tensor = episodes["next", "results"]
     assert results.dim() == 2
     assert results.size(0) == length
-    assert results.size(1) == RL_NUM_RESULTS
+    assert results.size(1) == NUM_RESULTS
     assert results.dtype == torch.int32
     end_of_round: Tensor = episodes["next", "end_of_round"]
     assert end_of_round.dim() == 1

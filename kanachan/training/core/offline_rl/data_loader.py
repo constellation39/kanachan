@@ -8,7 +8,7 @@ from kanachan.constants import (
     MAX_LENGTH_OF_PROGRESSION_FEATURES,
     MAX_NUM_ACTION_CANDIDATES,
     MAX_NUM_ROUND_SUMMARY,
-    RL_NUM_RESULTS,
+    NUM_RESULTS,
 )
 from kanachan.training.common import get_distributed_environment
 from kanachan.training.core.offline_rl.data_iterator import DataIterator
@@ -115,7 +115,7 @@ class DataLoader:
         assert batch[9].size(1) == MAX_NUM_ROUND_SUMMARY
         assert batch[10].dim() == 2
         assert batch[10].size(0) == batch_size
-        assert batch[10].size(1) == RL_NUM_RESULTS
+        assert batch[10].size(1) == NUM_RESULTS
         assert batch[11].dim() == 1
         assert batch[11].size(0) == batch_size
         assert batch[12].dim() == 1

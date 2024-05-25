@@ -15,7 +15,7 @@ from kanachan.constants import (
     MAX_NUM_ACTION_CANDIDATES,
     NUM_TYPES_OF_ROUND_SUMMARY,
     MAX_NUM_ROUND_SUMMARY,
-    RL_NUM_RESULTS,
+    NUM_RESULTS,
 )
 
 
@@ -241,7 +241,7 @@ class DataIterator:
                     dtype=torch.int32,
                 )
                 results = torch.zeros(
-                    RL_NUM_RESULTS,
+                    NUM_RESULTS,
                     device=torch.device("cpu"),
                     dtype=torch.int32,
                 )
@@ -276,9 +276,10 @@ class DataIterator:
                 )
 
                 results = [int(x) for x in results.split(",")]
-                if len(results) != RL_NUM_RESULTS:
-                    errmsg = f"{len(results)} != {RL_NUM_RESULTS}"
+                if len(results) != NUM_RESULTS - 4:
+                    errmsg = f"{len(results)} != {NUM_RESULTS - 4}"
                     raise RuntimeError(errmsg)
+                results.extend([0, 0, 0, 0])
                 results = torch.tensor(
                     results, device=torch.device("cpu"), dtype=torch.int32
                 )
@@ -354,8 +355,8 @@ class DataIterator:
         )
 
         results = [int(x) for x in results.split(",")]
-        if len(results) != RL_NUM_RESULTS:
-            errmsg = f"{len(results)} != {RL_NUM_RESULTS}"
+        if len(results) != NUM_RESULTS:
+            errmsg = f"{len(results)} != {NUM_RESULTS}"
             raise RuntimeError(errmsg)
         results = torch.tensor(
             results, device=torch.device("cpu"), dtype=torch.int32

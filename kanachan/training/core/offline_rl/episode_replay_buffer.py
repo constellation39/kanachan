@@ -11,7 +11,7 @@ from kanachan.constants import (
     MAX_LENGTH_OF_PROGRESSION_FEATURES,
     MAX_NUM_ACTION_CANDIDATES,
     MAX_NUM_ROUND_SUMMARY,
-    RL_NUM_RESULTS,
+    NUM_RESULTS,
 )
 from kanachan.training.common import get_distributed_environment
 from kanachan.training.core.rl import RewardFunction
@@ -157,11 +157,11 @@ class EpisodeReplayBuffer:
             assert round_summary.dtype == torch.int32
             results = annotation[10]
             assert results.dim() == 1
-            assert results.size(0) == RL_NUM_RESULTS
+            assert results.size(0) == NUM_RESULTS
             assert results.dtype == torch.int32
-            beginning_of_round = annotation[11]
-            assert beginning_of_round.dim() == 0
-            assert beginning_of_round.dtype == torch.bool
+            end_of_round = annotation[11]
+            assert end_of_round.dim() == 0
+            assert end_of_round.dtype == torch.bool
             done = annotation[12]
             assert done.dim() == 0
             assert done.dtype == torch.bool
@@ -181,7 +181,7 @@ class EpisodeReplayBuffer:
             td.set(("next", "progression"), next_progression.unsqueeze(0))
             td.set(("next", "candidates"), next_candidates.unsqueeze(0))
             td.set(("next", "round_summary"), round_summary.unsqueeze(0))
-            td.set(("next", "round_result"), round_result.unsqueeze(0))
+            td.set(("next", "results"), results.unsqueeze(0))
             td.set(("next", "end_of_round"), end_of_round.unsqueeze(0))
             td.set(("next", "end_of_game"), done.detach().clone().unsqueeze(0))
             td.set(("next", "done"), done.unsqueeze(0))
