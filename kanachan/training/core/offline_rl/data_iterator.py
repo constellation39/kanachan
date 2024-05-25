@@ -362,7 +362,7 @@ class DataIterator:
         )
 
         end_of_round = torch.tensor(
-            False, device=torch.device("cpu"), dtype=torch.bool
+            True, device=torch.device("cpu"), dtype=torch.bool
         )
 
         done = torch.tensor(True, device=torch.device("cpu"), dtype=torch.bool)
