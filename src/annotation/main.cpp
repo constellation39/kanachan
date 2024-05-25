@@ -561,10 +561,10 @@ void convert(std::filesystem::path const &ph) {
       if (record_count + 1u >= record_size) {
         KANACHAN_THROW<std::runtime_error>("A broken data.");
       }
-      // 四風連打もしくは四槓散了を確定させる打牌が立直宣言だった場合で，
-      // その立直が成立した時，立直の成立を判断するには次の record
-      // (つまり lq::RecordNewRound) に記録されている点数
-      // (現在の点数より1000点減っているかどうか) を見る以外に方法が無い．
+      // When a liqi declaration leads to a Four Winds Draw (四風連打) or Four Kongs Draw (四槓散了),
+      // and the liqi is established, the only way to determine if the liqi was successful is
+      // by checking the score recorded in the next record (i.e., lq::RecordNewRound)
+      // to see if it is 1000 points less than the current score.
       lq::RecordNewRound next_record;
       {
         std::string const &rr = [&]() -> std::string const &
@@ -626,7 +626,7 @@ void convert(std::filesystem::path const &ph) {
       }
     }
     else if (wrapper.name() == ".lq.RecordNewRound") {
-      // 開局
+      // The beginning of a new round.
       lq::RecordNewRound record;
       record.ParseFromString(wrapper.data());
 
@@ -686,7 +686,7 @@ void convert(std::filesystem::path const &ph) {
       }
     }
     else if (wrapper.name() == ".lq.RecordNoTile") {
-      // 荒牌平局
+      // An exhaustive draw.
       lq::RecordNoTile record;
       record.ParseFromString(wrapper.data());
 
@@ -711,14 +711,12 @@ void convert(std::filesystem::path const &ph) {
             continue;
           }
         }
-        // 河底牌に対してロンの選択肢が表示されたが見逃した．
+        // The option to declare Rong on the last discard tile had been displayed,
+        // but it was skipped.
         player_annotations[i].emplace_back(
           i, player_states, round_progress, prev_dapai_seat, prev_dapai,
           prev_action_candidates, record);
       }
-
-      // 荒牌平局でゲームが終了したことを示すフラグ．
-      bool const game_end = record_count + 1u == record_size;
 
       std::array<std::int_fast32_t, 4u> scores{
         player_states[0u].getCurrentScore(),
@@ -737,8 +735,66 @@ void convert(std::filesystem::path const &ph) {
         }
       }
 
+      // A flag indicating that the game ended in an exhaustive draw.
+      bool const game_end = [&]() -> bool
+      {
+        if (record_count + 1u == record_size) {
+          // For the cases where `game_record_version == 0u`
+          // (game records before the maintenance on 2021/07/28 (JST)).
+          return true;
+        }
+
+        // Read the game record ahead to check if the next round exists.
+        for (std::size_t i = record_count + 1u; i < record_size; ++i) {
+          std::string const &rr = [&]() -> std::string const &
+          {
+            if (game_record_version == 0u) {
+              return records_0[i];
+            }
+            if (game_record_version == 210715u) {
+              return records_210715[i].result();
+            }
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }();
+          if (game_record_version == 210715u && rr.empty()) {
+            continue;
+          }
+
+          lq::Wrapper wrapper_ahead;
+          wrapper_ahead.ParseFromString(rr);
+          if (wrapper_ahead.name() == ".lq.RecordAnGangAddGang") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          if (wrapper_ahead.name() == ".lq.RecordChiPengGang") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          if (wrapper_ahead.name() == ".lq.RecordDealTile") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          if (wrapper_ahead.name() == ".lq.RecordDiscardTile") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          if (wrapper_ahead.name() == ".lq.RecordHule") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          if (wrapper_ahead.name() == ".lq.RecordLiuJu") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          if (wrapper_ahead.name() == ".lq.RecordNewRound") {
+            return false;
+          }
+          if (wrapper_ahead.name() == ".lq.RecordNoTile") {
+            KANACHAN_THROW<std::logic_error>("A logic error.");
+          }
+          KANACHAN_THROW<std::runtime_error>(_1) << wrapper_ahead.name();
+        }
+
+        return true;
+      }();
+
       if (game_end) {
-        // 荒牌平局でゲームが終了した場合，リーチ棒はトップ取りとなる．
+        // If the game ends in an exhaustive draw, the liqi deposite sticks are taken by the
+        // player with the highest score.
         std::uint_fast8_t const top_seat = [&]() -> std::uint_fast8_t
         {
           std::uint_fast8_t result = 0u;
