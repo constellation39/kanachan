@@ -54,6 +54,7 @@ def _training(
     source_network: nn.Module,
     target_network: nn.Module | None,
     reward_plugin: Path,
+    double_q_learning: bool,
     discount_factor: float,
     kappa: float,
     td_computation_batch_size: int,
@@ -63,8 +64,8 @@ def _training(
     max_gradient_norm: float,
     optimizer: Optimizer,
     scheduler: lr_scheduler.LRScheduler | None,
-    target_update_interval: int | None,
-    target_update_rate: int | None,
+    target_update_interval: int,
+    target_update_rate: int,
     snapshot_interval: int,
     num_samples: int,
     summary_writer: SummaryWriter,
@@ -132,7 +133,9 @@ def _training(
                 assert isinstance(_chunk, TensorDict)
                 compute_td_error(
                     source_network=source_network,
-                    target_network=target_network,
+                    target_network=target_network
+                    if double_q_learning
+                    else None,
                     data=_chunk,
                     discount_factor=discount_factor,
                     kappa=kappa,
@@ -236,12 +239,12 @@ def _training(
             optimizer.zero_grad()
 
             if (
-                target_update_interval is not None
+                target_update_interval != 0
                 and batch_count
                 % (gradient_accumulation_steps * target_update_interval)
                 == 0
             ):
-                assert target_update_rate is not None
+                assert target_update_rate > 0.0
                 assert target_network is not None
                 with torch.no_grad():
                     for source_param, target_param in zip(
@@ -450,16 +453,24 @@ def _main(config: DictConfig) -> None:
             )
             raise RuntimeError(errmsg)
 
-    if (config.target_update_interval is None) != (
-        config.target_update_rate is None
+    if (config.target_update_interval == 0) != (
+        config.target_update_rate == 0.0
     ):
         errmsg = (
-            "`target_update_interval` must be consistent with"
-            " `target_update_rate`."
+            "`target_update_interval` and `target_update_rate` "
+            "must be zero simultaneously."
         )
         raise RuntimeError(errmsg)
-    enable_target_network = config.target_update_interval is not None
+    enable_target_network = config.target_update_interval > 0
 
+    if not enable_target_network and config.double_q_learning:
+        errmsg = (
+            "`double_q_learning` must be disabled "
+            "if target network is not enabled."
+        )
+        raise RuntimeError(errmsg)
+
+    num_samples = 0
     encoder_snapshot_path: Path | None = None
     decoder_snapshot_path: Path | None = None
     source_encoder_snapshot_path: Path | None = None
@@ -468,7 +479,6 @@ def _main(config: DictConfig) -> None:
     target_decoder_snapshot_path: Path | None = None
     optimizer_snapshot_path: Path | None = None
     scheduler_snapshot_path: Path | None = None
-    num_samples = 0
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -647,22 +657,17 @@ def _main(config: DictConfig) -> None:
 
     _config.optimizer.validate(config)
 
-    if (
-        config.target_update_interval is not None
-        and config.target_update_interval <= 0
-    ):
+    if config.target_update_interval < 0:
         errmsg = (
             f"{config.target_update_interval}: "
-            "`target_update_interval` must be a positive integer."
+            "`target_update_interval` must be a non-negative integer."
         )
         raise RuntimeError(errmsg)
 
-    if config.target_update_rate is not None and (
-        config.target_update_rate <= 0.0 or config.target_update_rate > 1.0
-    ):
+    if config.target_update_rate < 0.0 or config.target_update_rate > 1.0:
         errmsg = (
-            f"{config.target_update_rate}: `target_update_rate` must be"
-            " a real value within the range (0.0, 1.0]."
+            f"{config.target_update_rate}: `target_update_rate` must be "
+            "a real value within the range [0.0, 1.0]."
         )
         raise RuntimeError(errmsg)
 
@@ -725,6 +730,7 @@ def _main(config: DictConfig) -> None:
                 logging.info("(Will not load optimizer)")
 
         logging.info("Reward plugin: %s", config.reward_plugin)
+        logging.info("Double Q-learning: %s", config.double_q_learning)
         logging.info("Discount factor: %f", config.discount_factor)
         logging.info("Kappa: %f", config.kappa)
         logging.info(
@@ -749,8 +755,8 @@ def _main(config: DictConfig) -> None:
 
         _config.optimizer.dump(config)
 
-        if config.target_update_interval is not None:
-            assert config.target_update_rate is not None
+        if config.target_update_interval > 0:
+            assert config.target_update_rate > 0.0
             logging.info(
                 "Target network update interval: %d",
                 config.target_update_interval,
@@ -1147,6 +1153,7 @@ def _main(config: DictConfig) -> None:
             source_network=network,
             target_network=target_network,
             reward_plugin=config.reward_plugin,
+            double_q_learning=config.double_q_learning,
             discount_factor=config.discount_factor,
             kappa=config.kappa,
             td_computation_batch_size=config.td_computation_batch_size,

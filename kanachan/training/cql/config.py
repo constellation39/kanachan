@@ -28,6 +28,7 @@ class Config:
     initial_model_prefix: Path | None = None
     initial_model_index: int | None = None
     reward_plugin: Path = MISSING
+    double_q_learning: bool = False
     discount_factor: float = 0.99
     kappa: float = 1.0
     td_computation_batch_size: int = 0
@@ -36,8 +37,8 @@ class Config:
     batch_size: int = MISSING
     gradient_accumulation_steps: int = 1
     max_gradient_norm: float = 1.0
-    target_update_interval: int | None = None
-    target_update_rate: float | None = None
+    target_update_interval: int = 1
+    target_update_rate: float = 0.005
     snapshot_interval: int = 0
 
 
