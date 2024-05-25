@@ -153,7 +153,7 @@ RUN set -euxo pipefail; \
     pushd /workspace; \
     git clone 'https://github.com/tomohxx/shanten-number'; \
     pushd shanten-number; \
-    tar xzvf index.tar.gz; \
+    tar xzvf data.tar.gz; \
     popd; \
     popd
 
