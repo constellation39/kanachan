@@ -4,14 +4,36 @@ from argparse import ArgumentParser
 import sys
 
 
+_RoundKey = tuple[str, int, int, int, int]
+
+
+def _get_round_key(uuid: str, sparse: str, numeric: str) -> _RoundKey:
+    sparse_fields = [int(x) for x in sparse.split(",")]
+    numeric_fields = [int(x) for x in numeric.split(",")]
+
+    seat = sparse_fields[6] - 71
+    assert 0 <= seat and seat < 4
+    chang = sparse_fields[7] - 75
+    assert 0 <= chang and chang < 3
+    ju = sparse_fields[8] - 78
+    assert 0 <= ju and ju < 4
+
+    ben = numeric_fields[0]
+    assert ben >= 0
+
+    return uuid, seat, chang, ju, ben
+
+
 def _filter(room_filter: int | None) -> None:
+    keys: set[_RoundKey] = set()
+
     for line in sys.stdin:
         line = line.rstrip("\n")
 
         columns = line.split("\t")
         if len(columns) != 8:
             raise RuntimeError(f"An invalid line: {line}")
-        _, sparse, _, progression, _, _, _, _ = columns
+        uuid, sparse, numeric, progression, _, _, _, _ = columns
 
         sparse_fields = [int(x) for x in sparse.split(",")]
 
@@ -27,12 +49,45 @@ def _filter(room_filter: int | None) -> None:
         for p in progression_fields:
             if p == 0:
                 continue
-            if (p - 5) // 148 == seat:
-                bor = False
-                break
+            if 5 <= p and p <= 596:
+                if (p - 5) // 148 == seat:
+                    bor = False
+                    break
+                continue
+            if 597 <= p and p <= 956:
+                if (p - 597) // 90 == seat:
+                    bor = False
+                    break
+                continue
+            if 957 <= p and p <= 1436:
+                if (p - 957) // 120 == seat:
+                    bor = False
+                    break
+                continue
+            if 1437 <= p and p <= 1880:
+                if (p - 1437) // 111 == seat:
+                    bor = False
+                    break
+                continue
+            if 1881 <= p and p <= 2016:
+                if (p - 1881) // 34 == seat:
+                    bor = False
+                    break
+                continue
+            if 2017 <= p and p <= 2164:
+                if (p - 2017) // 37 == seat:
+                    bor = False
+                    break
+                continue
+            assert p == 2165
         if not bor:
             continue
 
+        key = _get_round_key(uuid, sparse, numeric)
+        if key in keys:
+            continue
+
+        keys.add(key)
         print(line)
 
 
