@@ -957,15 +957,15 @@ def _main(config: DictConfig) -> None:
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
-        assert encoder_snapshot_path is not None
-        assert decoder_snapshot_path is not None
+        # assert encoder_snapshot_path is not None
+        # assert decoder_snapshot_path is not None
 
         encoder_state_dict = torch.load(
-            encoder_snapshot_path, map_location="cpu"
+            source_encoder_snapshot_path, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
         decoder_state_dict = torch.load(
-            decoder_snapshot_path, map_location="cpu"
+            source_decoder_snapshot_path, map_location="cpu"
         )
         decoder.load_state_dict(decoder_state_dict)
         network.to(device=device, dtype=dtype)

@@ -315,7 +315,8 @@ def _train(
                 torch.ones_like(is_grad_nan),
                 torch.zeros_like(is_grad_nan),
             )
-            all_reduce(is_grad_nan)
+            if world_size >= 2:
+                all_reduce(is_grad_nan)
             if is_grad_nan.item() >= 1:
                 if local_rank == 0:
                     logging.warning(

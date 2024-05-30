@@ -25,7 +25,7 @@ class Encoder(nn.Module):
         dim_feedforward: int,
         activation_function: str,
         dropout: float,
-        layer_normalization: bool,
+        layer_normalization: bool = False,
         num_layers: int,
         checkpointing: bool,
         device: torch.device,

@@ -18,7 +18,7 @@ class QRDecoder(nn.Module):
         dimension: int | None,
         activation_function: str | None,
         dropout: float | None,
-        layer_normalization: bool,
+        layer_normalization: bool = False,
         num_layers: int,
         num_qr_intervals: int,
         dueling_architecture: bool,
