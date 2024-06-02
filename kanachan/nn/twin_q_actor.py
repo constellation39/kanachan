@@ -27,7 +27,7 @@ class TwinQActor(nn.Module):
             progression: Tensor,
             candidates: Tensor,
     ) -> Tensor:
-        batch_size = sparse.size(0)
+        batch_size = int(sparse.size(0))
 
         td = TensorDict(
             {
@@ -52,4 +52,4 @@ class TwinQActor(nn.Module):
         mask = candidates >= NUM_TYPES_OF_ACTIONS
         q = q.masked_fill(mask, -math.inf)
 
-        return q.argmax(1)
+        return q.argmax(1).to(torch.int32)

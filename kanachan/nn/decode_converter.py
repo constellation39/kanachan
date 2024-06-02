@@ -38,4 +38,4 @@ class DecodeConverter(nn.Module):
         score = decode.masked_fill(mask, -math.inf)
         if self.__mode == "scores":
             return score
-        return score.argmax(1)
+        return score.argmax(1).to(torch.int32)

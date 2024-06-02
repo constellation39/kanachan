@@ -147,7 +147,7 @@ def _get_a_star(source_network: nn.Module, data: TensorDict) -> Tensor:
     assert next_q.size(0) == batch_size
     assert next_q.size(1) == MAX_NUM_ACTION_CANDIDATES
 
-    a_star = next_q.argmax(1)
+    a_star = next_q.argmax(1).to(torch.int32)
     assert a_star.dim() == 1
     assert a_star.size(0) == batch_size
 
