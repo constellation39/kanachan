@@ -15,7 +15,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import GradScaler
-from torch.distributed import init_process_group, ReduceOp, all_reduce
+from torch.distributed import (
+    init_process_group,
+    broadcast,
+    ReduceOp,
+    all_reduce,
+)
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -96,11 +101,13 @@ def _training(
         with torch.autocast(**autocast_kwargs):
             network_tdm(data)
         action: Tensor = data["action"]
+        assert isinstance(action, Tensor)
         assert action.device == device
         assert action.dtype == torch.int32
         assert action.dim() == 1
         assert action.size(0) == batch_size
         log_probs: Tensor = data["log_probs"]
+        assert isinstance(log_probs, Tensor)
         assert log_probs.device == device
         assert log_probs.dtype == dtype
         assert log_probs.dim() == 2
@@ -130,7 +137,8 @@ def _training(
             if is_grad_nan.item() >= 1:
                 if local_rank == 0:
                     logging.warning(
-                        "Skip an optimization step because of NaN in the gradient."
+                        "Skip an optimization step "
+                        "because of NaN in the gradient."
                     )
                 optimizer.zero_grad()
                 continue
@@ -138,8 +146,7 @@ def _training(
             grad_scaler.unscale_(optimizer)
             gradient = get_gradient(network_tdm)
             # pylint: disable=not-callable
-            gradient_norm = torch.linalg.vector_norm(gradient).item()
-            assert isinstance(gradient_norm, float)
+            gradient_norm = float(torch.linalg.vector_norm(gradient).item())
             nn.utils.clip_grad_norm_(
                 network_tdm.parameters(),
                 max_gradient_norm,
@@ -700,8 +707,8 @@ def _main(config: DictConfig) -> None:
     tensorboard_path.mkdir(parents=True, exist_ok=True)
     with SummaryWriter(log_dir=tensorboard_path) as summary_writer:
         torch.autograd.set_detect_anomaly(
-            False
-        )  # `True` for debbing purpose only.
+            False  # `True` for debbing purpose only.
+        )
         _training(
             device=device,
             dtype=dtype,
