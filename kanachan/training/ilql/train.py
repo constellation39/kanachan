@@ -1137,10 +1137,11 @@ def _main(config: DictConfig) -> None:
         source1_q_decoder_tdm,
         source1_v_decoder_tdm,
     )
-    source1_model.to(device=device, dtype=dtype)
     if world_size >= 2:
-        source1_model = DistributedDataParallel(source1_model)
-        source1_model = nn.SyncBatchNorm.convert_sync_batchnorm(source1_model)
+        source1_model.to(device=device)
+        for _param in source1_model.parameters():
+            broadcast(_param.data, src=0)
+        source1_model.to(device="cpu")
 
     source2_encoder = Encoder(
         position_encoder=config.encoder.position_encoder,
@@ -1203,10 +1204,11 @@ def _main(config: DictConfig) -> None:
         source2_q_decoder_tdm,
         source2_v_decoder_tdm,
     )
-    source2_model.to(device=device, dtype=dtype)
     if world_size >= 2:
-        source2_model = DistributedDataParallel(source2_model)
-        source2_model = nn.SyncBatchNorm.convert_sync_batchnorm(source2_model)
+        source2_model.to(device=device)
+        for _param in source2_model.parameters():
+            broadcast(_param.data, src=0)
+        source2_model.to(device="cpu")
 
     target1_encoder = Encoder(
         position_encoder=config.encoder.position_encoder,
@@ -1265,13 +1267,11 @@ def _main(config: DictConfig) -> None:
         target1_q_decoder_tdm,
         target1_v_decoder_tdm,
     )
-    target1_model.requires_grad_(False)
-    target1_model.eval()
-    target1_model.to(device=device, dtype=dtype)
-    for _param, _target_param in zip(
-        source1_model.parameters(), target1_model.parameters()
-    ):
-        _target_param.data = _param.data.detach().clone()
+    with torch.no_grad():
+        for _param, _target_param in zip(
+            source1_model.parameters(), target1_model.parameters()
+        ):
+            _target_param.data = _param.data.detach().clone()
 
     target2_encoder = Encoder(
         position_encoder=config.encoder.position_encoder,
@@ -1330,13 +1330,11 @@ def _main(config: DictConfig) -> None:
         target2_q_decoder_tdm,
         target2_v_decoder_tdm,
     )
-    target2_model.requires_grad_(False)
-    target2_model.eval()
-    target2_model.to(device=device, dtype=dtype)
-    for _param, _target_param in zip(
-        source2_model.parameters(), target2_model.parameters()
-    ):
-        _target_param.data = _param.data.detach().clone()
+    with torch.no_grad():
+        for _param, _target_param in zip(
+            source2_model.parameters(), target2_model.parameters()
+        ):
+            _target_param.data = _param.data.detach().clone()
 
     model_to_save = TwinQActor(target1_model, target2_model)
     model_to_save_tdm = TensorDictModule(
@@ -1360,11 +1358,6 @@ def _main(config: DictConfig) -> None:
         source2_encoder.load_state_dict(encoder_state_dict)
         target1_encoder.load_state_dict(encoder_state_dict)
         target2_encoder.load_state_dict(encoder_state_dict)
-
-        source1_model.to(device=device, dtype=dtype)
-        source2_model.to(device=device, dtype=dtype)
-        target1_model.to(device=device, dtype=dtype)
-        target2_model.to(device=device, dtype=dtype)
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -1464,6 +1457,28 @@ def _main(config: DictConfig) -> None:
             lr_scheduler2.load_state_dict(
                 torch.load(lr_scheduler2_snapshot_path, map_location="cpu")
             )
+
+    source1_model.requires_grad_(True)
+    source1_model.train()
+    source1_model.to(device=device, dtype=dtype)
+    if world_size >= 2:
+        source1_model = DistributedDataParallel(source1_model)
+        source1_model = nn.SyncBatchNorm.convert_sync_batchnorm(source1_model)
+
+    source2_model.requires_grad_(True)
+    source2_model.train()
+    source2_model.to(device=device, dtype=dtype)
+    if world_size >= 2:
+        source2_model = DistributedDataParallel(source2_model)
+        source2_model = nn.SyncBatchNorm.convert_sync_batchnorm(source2_model)
+
+    target1_model.requires_grad_(False)
+    target1_model.eval()
+    target1_model.to(device=device, dtype=dtype)
+
+    target2_model.requires_grad_(False)
+    target2_model.eval()
+    target2_model.to(device=device, dtype=dtype)
 
     snapshots_path = output_prefix / "snapshots"
 
