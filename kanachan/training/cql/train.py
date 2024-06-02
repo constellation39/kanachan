@@ -24,7 +24,6 @@ from torch.distributed import (
     all_reduce,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
-from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from kanachan.constants import MAX_NUM_ACTION_CANDIDATES
 from kanachan.training.common import (
@@ -128,7 +127,6 @@ def _training(
 
     for data in data_loader:
         data = data.to(device=device)
-        assert isinstance(data, TensorDict)
 
         with torch.autocast(**autocast_kwargs):
             compute_td_error(
@@ -146,25 +144,31 @@ def _training(
         assert td_error.size(0) == batch_size
         td_error = td_error.mean()
 
-        q = data["action_value"]
+        q: Tensor = data["action_value"]
         assert isinstance(q, Tensor)
+        assert q.device == device
+        assert q.dtype == dtype
         assert q.dim() == 2
         assert q.size(0) == batch_size
         assert q.size(1) == MAX_NUM_ACTION_CANDIDATES
 
-        action = data["action"]
+        action: Tensor = data["action"]
         assert isinstance(action, Tensor)
+        assert action.device == device
+        assert action.dtype == torch.int32
         assert action.dim() == 1
         assert action.size(0) == batch_size
 
         q_sa = q[torch.arange(batch_size), action]
+        assert q_sa.device == device
+        assert q_sa.dtype == dtype
         assert q_sa.dim() == 1
         assert q_sa.size(0) == batch_size
 
         _q = q_sa.detach().clone().mean()
         if world_size >= 2:
             all_reduce(_q, ReduceOp.AVG)
-        q_to_display = _q.item()
+        q_to_display = float(_q.item())
 
         # Compute the regularization term.
         log_z = torch.logsumexp(q, dim=1)
@@ -235,13 +239,13 @@ def _training(
                 assert target_update_rate > 0.0
                 assert target_network is not None
                 with torch.no_grad():
-                    for source_param, target_param in zip(
+                    for _param, _target_param in zip(
                         source_network.parameters(),
                         target_network.parameters(),
                     ):
-                        target_param.data *= 1.0 - target_update_rate
-                        target_param.data += (
-                            target_update_rate * source_param.data
+                        _target_param.data *= 1.0 - target_update_rate
+                        _target_param.data += (
+                            target_update_rate * _param.data.detach()
                         )
 
             if local_rank == 0:
