@@ -37,6 +37,11 @@ def _parse_arguments() -> Namespace:
         metavar="BASELINE_GRADE",
     )
     parser.add_argument(
+        "--delete-baseline-keys",
+        nargs="*",
+        help="keys to be deleted from baseline model",
+    )
+    parser.add_argument(
         "--proposed-model",
         type=Path,
         required=True,
@@ -49,6 +54,11 @@ def _parse_arguments() -> Namespace:
         required=True,
         help="grade of proposed model",
         metavar="PROPOSED_GRADE",
+    )
+    parser.add_argument(
+        "--delete-proposed-keys",
+        nargs="*",
+        help="keys to be deleted from proposed model",
     )
     parser.add_argument(
         "--room",
@@ -143,6 +153,9 @@ def _main():
         )
         raise RuntimeError(msg)
 
+    if config.delete_baseline_keys is None:
+        config.delete_baseline_keys = []
+
     if not config.proposed_model.exists():
         msg = f"{config.proposed_model}: Does not exist."
         raise RuntimeError(msg)
@@ -162,6 +175,9 @@ def _main():
             " `--proposed-grade`."
         )
         raise RuntimeError(msg)
+
+    if config.delete_proposed_keys is None:
+        config.delete_proposed_keys = []
 
     room = {"bronze": 0, "silver": 1, "gold": 2, "jade": 3, "throne": 4}[
         config.room
@@ -195,6 +211,20 @@ def _main():
         )
         raise RuntimeError(msg)
 
+    common_keys_to_delete = [
+        "sparse",
+        "numeric",
+        "progression",
+        "candidates",
+        "encode",
+    ]
+
+    baseline_keys_to_delete = set(common_keys_to_delete)
+    baseline_keys_to_delete.update(config.delete_baseline_keys)
+
+    proposed_keys_to_delete = set(common_keys_to_delete)
+    proposed_keys_to_delete.update(config.delete_proposed_keys)
+
     if mode & 1 != 0:
         num_total_games = config.n
     else:
@@ -210,24 +240,17 @@ def _main():
         "maxinterval": 0.1,
         "smoothing": 0.0,
     }
-    with tqdm(**tqdm_kwargs) as progress, torch.no_grad():
-        keys_to_be_deleted = [
-            "sparse",
-            "numeric",
-            "progression",
-            "candidates",
-            "encode",
-        ]
+    with tqdm(**tqdm_kwargs) as progress, torch.inference_mode():
         game_logs = simulate(
             device,
             dtype,
             room,
             config.baseline_grade,
             baseline_model,
-            keys_to_be_deleted,
+            list(baseline_keys_to_delete),
             config.proposed_grade,
             proposed_model,
-            keys_to_be_deleted,
+            list(proposed_keys_to_delete),
             mode,
             config.n,
             config.batch_size,
