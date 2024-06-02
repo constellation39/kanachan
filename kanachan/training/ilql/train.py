@@ -18,7 +18,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import GradScaler
-from torch.distributed import init_process_group, all_reduce
+from torch.distributed import (
+    init_process_group,
+    broadcast,
+    ReduceOp,
+    all_reduce,
+)
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -50,17 +55,20 @@ def _get_q_target(
     assert q_target.dim() == 2
     assert q_target.size(0) == batch_size
     assert q_target.size(1) == MAX_NUM_ACTION_CANDIDATES
-    action: Tensor = data["action"]
+
+    action: Tensor = copy["action"]
+    assert isinstance(action, Tensor)
+    assert action.dtype == torch.int32
     assert action.dim() == 1
     assert action.size(0) == batch_size
+
     q_target = q_target[torch.arange(batch_size), action]
     assert q_target.dim() == 1
     assert q_target.size(0) == batch_size
 
     q_batch_mean = q_target.detach().clone().mean()
     if world_size >= 2:
-        all_reduce(q_batch_mean)
-        q_batch_mean /= world_size
+        all_reduce(q_batch_mean, ReduceOp.AVG)
 
     return q_target, q_batch_mean.item()
 
@@ -105,12 +113,12 @@ def _backward(
     assert action.dtype == torch.int32
     assert action.dim() == 1
     assert action.size(0) == batch_size
+
     q = q[torch.arange(batch_size), action]
 
     v_batch_mean = v.detach().clone().mean()
     if world_size >= 2:
-        all_reduce(v_batch_mean)
-        v_batch_mean /= world_size
+        all_reduce(v_batch_mean, ReduceOp.AVG)
 
     _copy: TensorDict = data["next"]
     assert isinstance(_copy, TensorDict)
@@ -128,16 +136,17 @@ def _backward(
     assert isinstance(done, Tensor)
     assert done.dim() == 1
     assert done.size(0) == batch_size
+
     vv = torch.where(done, torch.zeros_like(vv), vv)
-    assert vv.dim() == 1
-    assert vv.size(0) == batch_size
 
     reward: Tensor = _copy["reward"]
     assert isinstance(reward, Tensor)
     assert reward.dim() == 1
     assert reward.size(0) == batch_size
+
     q_loss = torch.square(reward + discount_factor * vv - q)
     q_loss = torch.mean(q_loss)
+
     v_loss = q_target - v
     v_loss = torch.where(
         v_loss < 0.0,
@@ -145,12 +154,12 @@ def _backward(
         expectile * torch.square(v_loss),
     )
     v_loss = torch.mean(v_loss)
+
     qv_loss = q_loss + v_loss_scaling * v_loss
 
     qv_batch_loss = qv_loss.detach().clone().mean()
     if world_size >= 2:
-        all_reduce(qv_batch_loss)
-        qv_batch_loss /= world_size
+        all_reduce(qv_batch_loss, ReduceOp.AVG)
 
     if math.isnan(qv_loss.item()):
         raise RuntimeError("QV loss becomes NaN.")
@@ -172,7 +181,7 @@ def _step(
     grad_scaler.unscale_(optimizer)
     qv_gradient = get_gradient(source_model)
     # pylint: disable=not-callable
-    qv_gradient_norm: float = torch.linalg.vector_norm(qv_gradient).item()
+    qv_gradient_norm = float(torch.linalg.vector_norm(qv_gradient).item())
     nn.utils.clip_grad_norm_(
         source_model.parameters(),
         max_gradient_norm,
@@ -258,7 +267,7 @@ def _train(
             drop_last=(world_size >= 2),
         )
 
-    last_snapshot = None
+    last_snapshot: int | None = None
     if snapshot_interval > 0:
         last_snapshot = num_samples
 
@@ -274,8 +283,7 @@ def _train(
     batch_count = 0
 
     for data in data_loader:
-        data = data.to(device=device)
-        assert isinstance(data, TensorDict)
+        data: TensorDict = data.to(device=device)
 
         # Compute the Q target value.
         with torch.no_grad(), torch.autocast(**autocast_kwargs):
@@ -370,31 +378,22 @@ def _train(
                 == 0
             ):
                 with torch.no_grad():
-                    param1_source = nn.utils.parameters_to_vector(
+                    for _param, _target_param in zip(
                         source1_model.parameters(),
-                    )
-                    param1_target = nn.utils.parameters_to_vector(
                         target1_model.parameters(),
-                    )
-                    param1_target *= 1.0 - target_update_rate
-                    param1_target += target_update_rate * param1_source
-                    nn.utils.vector_to_parameters(
-                        param1_target,
-                        target1_model.parameters(),
-                    )
-
-                    param2_source = nn.utils.parameters_to_vector(
+                    ):
+                        _target_param.data *= 1.0 - target_update_rate
+                        _target_param.data += (
+                            target_update_rate * _param.data.detach()
+                        )
+                    for _param, _target_param in zip(
                         source2_model.parameters(),
-                    )
-                    param2_target = nn.utils.parameters_to_vector(
                         target2_model.parameters(),
-                    )
-                    param2_target *= 1.0 - target_update_rate
-                    param2_target += target_update_rate * param2_source
-                    nn.utils.vector_to_parameters(
-                        param2_target,
-                        target2_model.parameters(),
-                    )
+                    ):
+                        _target_param.data *= 1.0 - target_update_rate
+                        _target_param.data += (
+                            target_update_rate * _param.data.detach()
+                        )
 
             if local_rank == 0:
                 logging.info(
