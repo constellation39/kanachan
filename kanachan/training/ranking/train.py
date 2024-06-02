@@ -61,13 +61,6 @@ def _train(
 
     world_size, _, local_rank = get_distributed_environment()
 
-    is_amp_enabled = device.type != "cpu" and dtype != amp_dtype
-    autocast_kwargs = {
-        "device_type": device.type,
-        "dtype": amp_dtype,
-        "enabled": is_amp_enabled,
-    }
-
     # Prepare the training data loader. Note that this data loader must iterate
     # the training data set only once.
     data_loader = DataLoader(
@@ -81,9 +74,13 @@ def _train(
         drop_last=(world_size >= 2),
     )
 
-    grad_scaler = None
-    if is_amp_enabled:
-        grad_scaler = GradScaler()
+    is_amp_enabled = dtype != amp_dtype
+    autocast_kwargs = {
+        "device_type": device.type,
+        "dtype": amp_dtype,
+        "enabled": is_amp_enabled,
+    }
+    grad_scaler = GradScaler(enabled=is_amp_enabled)
 
     last_snapshot = None
     if snapshot_interval > 0:
@@ -170,10 +167,7 @@ def _train(
             raise RuntimeError(errmsg)
 
         loss = loss / gradient_accumulation_steps
-        if grad_scaler is None:
-            loss.backward()
-        else:
-            grad_scaler.scale(loss).backward()  # type: ignore
+        grad_scaler.scale(loss).backward()  # type: ignore
 
         num_samples += batch_size * world_size
         batch_count += 1
@@ -190,8 +184,7 @@ def _train(
                 optimizer.zero_grad()
                 continue
 
-            if grad_scaler is not None:
-                grad_scaler.unscale_(optimizer)
+            grad_scaler.unscale_(optimizer)
             gradient = get_gradient(network_tdm)
             # pylint: disable=not-callable
             gradient_norm = torch.linalg.vector_norm(gradient).item()
@@ -201,11 +194,8 @@ def _train(
                 max_gradient_norm,
                 error_if_nonfinite=False,
             )
-            if grad_scaler is None:
-                optimizer.step()
-            else:
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
             if scheduler is not None:
                 scheduler.step()
 
