@@ -1747,8 +1747,8 @@ def _main(config: DictConfig) -> None:
 
     with SummaryWriter(log_dir=tensorboard_path) as summary_writer:
         torch.autograd.set_detect_anomaly(
-            False
-        )  # `True` for debbing purpose only.
+            False  # `True` for debbing purpose only.
+        )
         assert isinstance(source1_model, nn.Module)
         assert isinstance(source2_model, nn.Module)
         _train(
