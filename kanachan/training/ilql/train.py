@@ -78,7 +78,7 @@ def _backward(
     expectile: float,
     v_loss_scaling: float,
     gradient_accumulation_steps: int,
-    grad_scaler: GradScaler | None,
+    grad_scaler: GradScaler,
     q_target: Tensor,
 ) -> BackwardResult:
     batch_size = int(data.batch_size[0])
@@ -156,10 +156,7 @@ def _backward(
         raise RuntimeError("QV loss becomes NaN.")
 
     qv_loss /= gradient_accumulation_steps
-    if grad_scaler is None:
-        qv_loss.backward()
-    else:
-        grad_scaler.scale(qv_loss).backward()  # type: ignore
+    grad_scaler.scale(qv_loss).backward()  # type: ignore
 
     return q_loss, v_loss, v_batch_mean.item(), qv_batch_loss.item()
 
@@ -167,13 +164,12 @@ def _backward(
 def _step(
     *,
     source_model: nn.Module,
-    grad_scaler: GradScaler | None,
+    grad_scaler: GradScaler,
     max_gradient_norm: float,
     optimizer: Optimizer,
     scheduler: LRScheduler | None,
 ) -> float:
-    if grad_scaler is not None:
-        grad_scaler.unscale_(optimizer)
+    grad_scaler.unscale_(optimizer)
     qv_gradient = get_gradient(source_model)
     # pylint: disable=not-callable
     qv_gradient_norm: float = torch.linalg.vector_norm(qv_gradient).item()
@@ -182,10 +178,7 @@ def _step(
         max_gradient_norm,
         error_if_nonfinite=False,
     )
-    if grad_scaler is None:
-        optimizer.step()
-    else:
-        grad_scaler.step(optimizer)
+    grad_scaler.step(optimizer)
     if scheduler is not None:
         scheduler.step()
 
@@ -232,13 +225,6 @@ def _train(
 
     world_size, _, local_rank = get_distributed_environment()
 
-    is_amp_enabled = device != "cpu" and dtype != amp_dtype
-    autocast_kwargs = {
-        "device_type": device.type,
-        "dtype": amp_dtype,
-        "enabled": is_amp_enabled,
-    }
-
     # Load the reward plugin.
     with open(reward_plugin, encoding="UTF-8") as file_pointer:
         exec(file_pointer.read(), globals())  # pylint: disable=exec-used
@@ -276,9 +262,13 @@ def _train(
     if snapshot_interval > 0:
         last_snapshot = num_samples
 
-    grad_scaler = None
-    if is_amp_enabled:
-        grad_scaler = GradScaler()
+    is_amp_enabled = device != "cpu" and dtype != amp_dtype
+    autocast_kwargs = {
+        "device_type": device.type,
+        "dtype": amp_dtype,
+        "enabled": is_amp_enabled,
+    }
+    grad_scaler = GradScaler(enabled=is_amp_enabled)
 
     num_consumed_samples = 0
     batch_count = 0
@@ -369,8 +359,7 @@ def _train(
                 optimizer=optimizer2,
                 scheduler=lr_scheduler2,
             )
-            if grad_scaler is not None:
-                grad_scaler.update()
+            grad_scaler.update()
 
             optimizer1.zero_grad()
             optimizer2.zero_grad()
