@@ -57,7 +57,6 @@ def _training(
     double_q_learning: bool,
     discount_factor: float,
     kappa: float,
-    td_computation_batch_size: int,
     alpha: float,
     batch_size: int,
     gradient_accumulation_steps: int,
@@ -128,25 +127,17 @@ def _training(
         assert isinstance(data, TensorDict)
 
         with torch.autocast(**autocast_kwargs):
-            _chunks: list[TensorDict] = []
-            for _chunk in data.split(td_computation_batch_size):
-                assert isinstance(_chunk, TensorDict)
-                compute_td_error(
-                    source_network=source_network,
-                    target_network=target_network
-                    if double_q_learning
-                    else None,
-                    data=_chunk,
-                    discount_factor=discount_factor,
-                    kappa=kappa,
-                )
-                _chunks.append(_chunk)
-            data: TensorDict = torch.cat(_chunks)  # type: ignore
-        data.del_("encode")
-        if data.get(("next", "encode"), None) is not None:
-            data.del_(("next", "encode"))
-        td_error = data["td_error"]
+            compute_td_error(
+                source_network=source_network,
+                target_network=target_network if double_q_learning else None,
+                data=data,
+                discount_factor=discount_factor,
+                kappa=kappa,
+            )
+        td_error: Tensor = data["td_error"]
         assert isinstance(td_error, Tensor)
+        assert td_error.device == device
+        assert td_error.dtype == dtype
         assert td_error.dim() == 1
         assert td_error.size(0) == batch_size
         td_error = td_error.mean()
@@ -622,15 +613,6 @@ def _main(config: DictConfig) -> None:
         errmsg = f"{config.kappa}: `kappa` must be a non-negative real value."
         raise RuntimeError(errmsg)
 
-    if config.td_computation_batch_size == 0:
-        config.td_computation_batch_size = config.batch_size
-    if config.td_computation_batch_size < 0:
-        errmsg = (
-            f"{config.td_computation_batch_size}: "
-            "`td_computation_batch_size` must be a non-negative integer."
-        )
-        raise RuntimeError(errmsg)
-
     if config.alpha < 0.0:
         errmsg = f"{config.alpha}: `alpha` must be a non-negative real value."
         raise RuntimeError(errmsg)
@@ -733,10 +715,6 @@ def _main(config: DictConfig) -> None:
         logging.info("Double Q-learning: %s", config.double_q_learning)
         logging.info("Discount factor: %f", config.discount_factor)
         logging.info("Kappa: %f", config.kappa)
-        logging.info(
-            "Batch size for TD computation: %d",
-            config.td_computation_batch_size,
-        )
         logging.info("Alpha: %f", config.alpha)
         logging.info("Checkpointing: %s", config.checkpointing)
         logging.info("Batch size: %d", config.batch_size)
@@ -1156,7 +1134,6 @@ def _main(config: DictConfig) -> None:
             double_q_learning=config.double_q_learning,
             discount_factor=config.discount_factor,
             kappa=config.kappa,
-            td_computation_batch_size=config.td_computation_batch_size,
             alpha=config.alpha,
             batch_size=config.batch_size,
             gradient_accumulation_steps=config.gradient_accumulation_steps,

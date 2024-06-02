@@ -31,7 +31,6 @@ class Config:
     double_q_learning: bool = False
     discount_factor: float = 0.99
     kappa: float = 1.0
-    td_computation_batch_size: int = 0
     alpha: float = 1.0
     checkpointing: bool = False
     batch_size: int = MISSING
