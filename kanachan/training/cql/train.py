@@ -74,13 +74,6 @@ def _training(
 
     world_size, _, local_rank = get_distributed_environment()
 
-    is_amp_enabled = device.type != "cpu" and dtype != amp_dtype
-    autocast_kwargs = {
-        "device_type": device.type,
-        "dtype": amp_dtype,
-        "enabled": is_amp_enabled,
-    }
-
     # Load the reward plugin.
     with open(reward_plugin, encoding="UTF-8") as file_pointer:
         exec(file_pointer.read(), globals())  # pylint: disable=exec-used
@@ -112,13 +105,17 @@ def _training(
             drop_last=(world_size >= 2),
         )
 
-    last_snapshot = None
+    is_amp_enabled = dtype != amp_dtype
+    autocast_kwargs = {
+        "device_type": device.type,
+        "dtype": amp_dtype,
+        "enabled": is_amp_enabled,
+    }
+    grad_scaler = GradScaler(enabled=is_amp_enabled)
+
+    last_snapshot: int | None = None
     if snapshot_interval > 0:
         last_snapshot = num_samples
-
-    grad_scaler = None
-    if is_amp_enabled:
-        grad_scaler = GradScaler()
 
     batch_count = 0
 
@@ -189,10 +186,7 @@ def _training(
             raise RuntimeError(errmsg)
 
         loss /= gradient_accumulation_steps
-        if grad_scaler is None:
-            loss.backward()
-        else:
-            grad_scaler.scale(loss).backward()  # type: ignore
+        grad_scaler.scale(loss).backward()  # type: ignore
 
         num_samples += batch_size * world_size
         batch_count += 1
@@ -209,8 +203,7 @@ def _training(
                 optimizer.zero_grad()
                 continue
 
-            if grad_scaler is not None:
-                grad_scaler.unscale_(optimizer)
+            grad_scaler.unscale_(optimizer)
             gradient = get_gradient(source_network)
             # pylint: disable=not-callable
             gradient_norm = float(torch.linalg.vector_norm(gradient).item())
@@ -219,11 +212,8 @@ def _training(
                 max_gradient_norm,
                 error_if_nonfinite=False,
             )
-            if grad_scaler is None:
-                optimizer.step()
-            else:
-                grad_scaler.step(optimizer)
-                grad_scaler.update()
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
             if scheduler is not None:
                 scheduler.step()
 
