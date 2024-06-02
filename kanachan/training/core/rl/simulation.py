@@ -239,6 +239,7 @@ def simulate(
             )
             raise RuntimeError(errmsg)
         reward: Tensor = episode["next", "reward"]
+        assert isinstance(reward, Tensor)
         if reward.dim() not in (1, 2):
             errmsg = "An invalid shape of the `reward` tensor."
             raise RuntimeError(errmsg)
@@ -257,7 +258,7 @@ def simulate(
 
         _episodes.append(episode.detach().clone().cpu())
 
-    episodes = torch.cat(_episodes).to_tensordict()  # type: ignore
+    episodes: TensorDict = torch.cat(_episodes).to_tensordict()  # type: ignore
     assert isinstance(episodes, TensorDict)
 
     return episodes
