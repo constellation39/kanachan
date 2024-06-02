@@ -181,10 +181,10 @@ def dump(config: Any) -> None:
         config.encoder.activation_function,
     )
     logging.info("Dropout for encoder: %f", config.encoder.dropout)
-    logging.info("# of encoder layers: %d", config.encoder.num_layers)
     logging.info(
         "Layer normalization for encoder: %s",
         config.encoder.layer_normalization,
     )
+    logging.info("# of encoder layers: %d", config.encoder.num_layers)
     if config.encoder.load_from is not None:
         logging.info("Load encoder from: %s", config.encoder.load_from)
