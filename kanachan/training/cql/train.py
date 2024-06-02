@@ -17,7 +17,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda.amp import GradScaler
-from torch.distributed import init_process_group, ReduceOp, all_reduce
+from torch.distributed import (
+    init_process_group,
+    broadcast,
+    ReduceOp,
+    all_reduce,
+)
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -774,6 +779,9 @@ def _main(config: DictConfig) -> None:
         else:
             logging.info("Snapshot interval: %d", config.snapshot_interval)
 
+    if world_size >= 2:
+        init_process_group(backend="nccl")
+
     encoder = Encoder(
         position_encoder=config.encoder.position_encoder,
         dimension=config.encoder.dimension,
@@ -811,11 +819,11 @@ def _main(config: DictConfig) -> None:
         decoder, in_keys=["candidates", "encode"], out_keys=["qr_action_value"]
     )
     network = TensorDictSequential(encoder_tdm, decoder_tdm)
-    network = network.to(device=device, dtype=dtype)
     if world_size >= 2:
-        init_process_group(backend="nccl")
-        network = DistributedDataParallel(network)
-        network = nn.SyncBatchNorm.convert_sync_batchnorm(network)
+        network.to(device=device)
+        for _param in network.parameters():
+            broadcast(_param.data, src=0)
+        network.to(device="cpu")
 
     target_encoder: Encoder | None = None
     target_encoder_tdm: TensorDictModule | None = None
@@ -862,15 +870,11 @@ def _main(config: DictConfig) -> None:
         target_network = TensorDictSequential(
             target_encoder_tdm, target_decoder_tdm
         )
-        target_network.requires_grad_(False)
-        target_network.eval()
-        target_network = target_network.to(device=device, dtype=dtype)
-
         with torch.no_grad():
-            for param, target_param in zip(
+            for _param, _target_param in zip(
                 network.parameters(), target_network.parameters()
             ):
-                target_param.data = param.data.detach().clone()
+                _target_param.data = _param.data.detach().clone()
 
     q_decoder = QDecoder()
     q_decoder_tdm = TensorDictModule(
@@ -891,43 +895,29 @@ def _main(config: DictConfig) -> None:
             q_decoder_tdm,
             argmax_layer_tdm,
         )
-        network_to_save.requires_grad_(False)
-        network_to_save.eval()
-        network_to_save.to(device=device, dtype=dtype)
     else:
         network_to_save = TensorDictSequential(
             encoder_tdm, decoder_tdm, q_decoder_tdm, argmax_layer_tdm
         )
-        network_to_save.to(device=device, dtype=dtype)
 
     optimizer, scheduler = _config.optimizer.create(config, network)
 
     if config.encoder.load_from is not None:
         assert config.initial_model_prefix is None
         assert config.initial_model_index is None
-
         encoder_state_dict = torch.load(
             config.encoder.load_from, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
-        network.to(device=device, dtype=dtype)
 
         if enable_target_network:
             assert target_encoder is not None
-            assert target_network is not None
-            target_encoder_state_dict = torch.load(
-                config.encoder.load_from, map_location="cpu"
-            )
-            target_encoder.load_state_dict(target_encoder_state_dict)
-            target_network.to(device=device, dtype=dtype)
-
-        network_to_save.to(device=device, dtype=dtype)
+            target_encoder.load_state_dict(encoder_state_dict)
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
         assert encoder_snapshot_path is not None
         assert decoder_snapshot_path is not None
-
         encoder_state_dict = torch.load(
             encoder_snapshot_path, map_location="cpu"
         )
@@ -936,7 +926,6 @@ def _main(config: DictConfig) -> None:
             decoder_snapshot_path, map_location="cpu"
         )
         decoder.load_state_dict(decoder_state_dict)
-        network.to(device=device, dtype=dtype)
 
         if enable_target_network:
             assert target_encoder_snapshot_path is not None
@@ -952,9 +941,6 @@ def _main(config: DictConfig) -> None:
                 target_decoder_snapshot_path, map_location="cpu"
             )
             target_decoder.load_state_dict(target_decoder_state_dict)
-            target_network.to(device=device, dtype=dtype)
-
-        network_to_save.to(device=device, dtype=dtype)
 
         if optimizer_snapshot_path is not None:
             optimizer.load_state_dict(
@@ -965,6 +951,27 @@ def _main(config: DictConfig) -> None:
             scheduler.load_state_dict(
                 torch.load(scheduler_snapshot_path, map_location="cpu")
             )
+
+    network.requires_grad_(True)
+    network.train()
+    network = network.to(device=device, dtype=dtype)
+    if world_size >= 2:
+        network = DistributedDataParallel(network)
+        network = nn.SyncBatchNorm.convert_sync_batchnorm(network)
+
+    if enable_target_network:
+        assert target_network is not None
+        target_network.requires_grad_(False)
+        target_network.eval()
+        target_network = target_network.to(device=device, dtype=dtype)
+
+        network_to_save.requires_grad_(False)
+        network_to_save.eval()
+        network_to_save = network_to_save.to(device=device, dtype=dtype)
+    else:
+        network_to_save.requires_grad_(True)
+        network_to_save.train()
+        network_to_save = network_to_save.to(device=device, dtype=dtype)
 
     snapshots_path = output_prefix / "snapshots"
 
