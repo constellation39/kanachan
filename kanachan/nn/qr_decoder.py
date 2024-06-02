@@ -127,20 +127,21 @@ class QRDecoder(nn.Module):
 
 
 def _get_a_star(source_network: nn.Module, data: TensorDict) -> Tensor:
-    batch_size = data.size(0)
-    assert isinstance(batch_size, int)
+    batch_size = int(data.batch_size[0])
 
-    source_network.requires_grad_(False)
+    copy: TensorDict = data["next"]
+    assert isinstance(copy, TensorDict)
+    copy = copy.detach()
+    copy = copy.clone()
     with torch.no_grad():
-        source_network(data["next"])
-    source_network.requires_grad_(True)
+        source_network(copy)
 
-    next_theta = data["next", "qr_action_value"]
+    next_theta: Tensor = copy["qr_action_value"]
     assert isinstance(next_theta, Tensor)
     assert next_theta.dim() == 3
     assert next_theta.size(0) == batch_size
     assert next_theta.size(1) == MAX_NUM_ACTION_CANDIDATES
-    num_qr_intervals = next_theta.size(2)
+    num_qr_intervals = int(next_theta.size(2))
 
     next_q = torch.sum(next_theta * (1.0 / num_qr_intervals), dim=2)
     assert next_q.dim() == 2
@@ -162,27 +163,34 @@ def compute_td_error(
     discount_factor: float,
     kappa: float,
 ) -> None:
-    batch_size = data.size(0)
-    assert isinstance(batch_size, int)
+    batch_size = int(data.batch_size[0])
 
     a_star = _get_a_star(source_network, data)
 
-    source_network(data)
+    copy: TensorDict = data.detach()
+    copy = copy.clone()
+    source_network(copy)
+    data["qr_action_value"] = copy["qr_action_value"]
 
+    _copy: TensorDict = data["next"]
+    assert isinstance(_copy, TensorDict)
+    _copy = _copy.detach()
+    _copy = _copy.clone()
     if target_network is None:
-        source_network(data["next"])
+        source_network(_copy)
     else:
         with torch.no_grad():
-            target_network(data["next"])
+            target_network(_copy)
+    data["next", "qr_action_value"] = _copy["qr_action_value"]
 
-    theta = data["qr_action_value"]
+    theta: Tensor = data["qr_action_value"]
     assert isinstance(theta, Tensor)
     assert theta.dim() == 3
     assert theta.size(0) == batch_size
     assert theta.size(1) == MAX_NUM_ACTION_CANDIDATES
-    num_qr_intervals = theta.size(2)
+    num_qr_intervals = int(theta.size(2))
 
-    action = data["action"]
+    action: Tensor = data["action"]
     assert isinstance(action, Tensor)
     assert action.dtype == torch.int32
     assert action.dim() == 1
@@ -199,7 +207,7 @@ def compute_td_error(
     assert q.size(1) == MAX_NUM_ACTION_CANDIDATES
     data["action_value"] = q
 
-    next_theta = data["next", "qr_action_value"]
+    next_theta: Tensor = data["next", "qr_action_value"]
     assert isinstance(next_theta, Tensor)
     assert next_theta.dim() == 3
     assert next_theta.size(0) == batch_size
@@ -212,12 +220,12 @@ def compute_td_error(
     assert next_q.size(1) == MAX_NUM_ACTION_CANDIDATES
     data["next", "action_value"] = next_q
 
-    reward = data["next", "reward"]
+    reward: Tensor = data["next", "reward"]
     assert isinstance(reward, Tensor)
     assert reward.dim() == 1
     assert reward.size(0) == batch_size
 
-    done = data["next", "done"]
+    done: Tensor = data["next", "done"]
     assert isinstance(done, Tensor)
     assert done.dtype == torch.bool
     assert done.dim() == 1
