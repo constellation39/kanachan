@@ -39,8 +39,14 @@ def _get_q_target(
     *, world_size: int, data: TensorDict, target_model: TensorDictModule
 ) -> tuple[Tensor, float]:
     batch_size = int(data.batch_size[0])
-    target_model(data)
-    q_target: Tensor = data["action_value"]
+
+    copy: TensorDict = data.copy()
+    assert isinstance(copy, TensorDict)
+    copy = copy.detach()
+    target_model(copy)
+
+    q_target: Tensor = copy["action_value"]
+    assert isinstance(q_target, Tensor)
     assert q_target.dim() == 2
     assert q_target.size(0) == batch_size
     assert q_target.size(1) == MAX_NUM_ACTION_CANDIDATES
@@ -76,16 +82,27 @@ def _backward(
     q_target: Tensor,
 ) -> BackwardResult:
     batch_size = int(data.batch_size[0])
+
+    copy: TensorDict = data.copy()
+    assert isinstance(copy, TensorDict)
+    copy = copy.detach()
     with torch.autocast(**autocast_kwargs):
-        source_model(data)
-    q: Tensor = data["action_value"]
+        source_model(copy)
+
+    q: Tensor = copy["action_value"]
+    assert isinstance(q, Tensor)
     assert q.dim() == 2
     assert q.size(0) == batch_size
     assert q.size(1) == MAX_NUM_ACTION_CANDIDATES
-    v: Tensor = data["state_value"]
+
+    v: Tensor = copy["state_value"]
+    assert isinstance(v, Tensor)
     assert v.dim() == 1
     assert v.size(0) == batch_size
-    action: Tensor = data["action"]
+
+    action: Tensor = copy["action"]
+    assert isinstance(action, Tensor)
+    assert action.dtype == torch.int32
     assert action.dim() == 1
     assert action.size(0) == batch_size
     q = q[torch.arange(batch_size), action]
@@ -95,17 +112,28 @@ def _backward(
         all_reduce(v_batch_mean)
         v_batch_mean /= world_size
 
+    _copy: TensorDict = data["next"]
+    assert isinstance(_copy, TensorDict)
+    _copy = _copy.copy()
+    _copy = _copy.detach()
     with torch.autocast(**autocast_kwargs):
-        source_model(data["next"])
-    vv: Tensor = data["next", "state_value"]
-    done: Tensor = data["next", "done"]
+        source_model(_copy)
+
+    vv: Tensor = _copy["state_value"]
+    assert isinstance(vv, Tensor)
+    assert vv.dim() == 1
+    assert vv.size(0) == batch_size
+
+    done: Tensor = _copy["done"]
+    assert isinstance(done, Tensor)
     assert done.dim() == 1
     assert done.size(0) == batch_size
     vv = torch.where(done, torch.zeros_like(vv), vv)
     assert vv.dim() == 1
     assert vv.size(0) == batch_size
 
-    reward: Tensor = data["next", "reward"]
+    reward: Tensor = _copy["reward"]
+    assert isinstance(reward, Tensor)
     assert reward.dim() == 1
     assert reward.size(0) == batch_size
     q_loss = torch.square(reward + discount_factor * vv - q)
