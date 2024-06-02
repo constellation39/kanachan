@@ -157,10 +157,10 @@ def _train(
 
         loss: Tensor = loss_function(decode, ranking)
 
-        _loss = loss
+        _loss = loss.detach().clone()
         if world_size >= 2:
             all_reduce(_loss, ReduceOp.AVG)
-        loss_to_display = _loss.item()
+        loss_to_display = float(_loss.item())
 
         if math.isnan(loss_to_display):
             errmsg = "Training loss becomes NaN."
