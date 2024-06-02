@@ -92,6 +92,7 @@ def _training(
             rewrite_grades=rewrite_grades,
             # pylint: disable=undefined-variable
             get_reward=get_reward,  # type: ignore # noqa: F821
+            dtype=dtype,
             max_size=replay_buffer_size,
             batch_size=batch_size,
             drop_last=(world_size >= 2),
@@ -104,6 +105,7 @@ def _training(
             rewrite_grades=rewrite_grades,
             # pylint: disable=undefined-variable
             get_reward=get_reward,  # type: ignore # noqa: F821
+            dtype=dtype,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=(num_workers >= 1),
