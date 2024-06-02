@@ -45,6 +45,7 @@ class EpisodeReplayBuffer:
         rewrite_rooms: int | None,
         rewrite_grades: int | None,
         get_reward: RewardFunction,
+        dtype: torch.dtype,
         max_size: int,
         batch_size: int,
         drop_last: bool,
@@ -71,6 +72,7 @@ class EpisodeReplayBuffer:
         )
         self.__contiguous = contiguous_training_data
         self.__get_reward = get_reward
+        self.__dtype = dtype
         storage = ListStorage(max_size=max_size)
         sampler = SamplerWithoutReplacement(drop_last=drop_last)
         self.__replay_buffer = TensorDictReplayBuffer(
@@ -200,6 +202,7 @@ class EpisodeReplayBuffer:
                     )
                     raise RuntimeError(errmsg)
                 reward: Tensor = episode["next", "reward"]
+                assert isinstance(reward, Tensor)
                 if reward.dim() not in (1, 2):
                     errmsg = "An invalid shape of the `reward` tensor."
                     raise RuntimeError(errmsg)
@@ -218,6 +221,7 @@ class EpisodeReplayBuffer:
                 ):
                     errmsg = "An invalid `dtype` of the `reward` tensor."
                     raise RuntimeError(errmsg)
+                episode["next", "reward"] = reward.to(self.__dtype)
 
                 if progress is not None:
                     if self.__size + length <= self.__max_size:

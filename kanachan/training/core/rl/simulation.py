@@ -253,6 +253,7 @@ def simulate(
         if reward.dtype not in (torch.float64, torch.float32, torch.float16):
             errmsg = "An invalid `dtype` for the `reward` tensor."
             raise RuntimeError(errmsg)
+        episode["next", "reward"] = reward.to(dtype=dtype)
 
         _episodes.append(episode.detach().clone().cpu())
 

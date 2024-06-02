@@ -42,6 +42,7 @@ class DataLoader:
         rewrite_rooms: int | None,
         rewrite_grades: int | None,
         get_reward: RewardFunction,
+        dtype: torch.dtype,
         batch_size: int = 1,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -65,6 +66,7 @@ class DataLoader:
 
         self.__iterator = iter(data_loader)
         self.__get_reward = get_reward
+        self.__dtype = dtype
 
     def __iter__(self) -> "DataLoader":
         return self
@@ -149,6 +151,7 @@ class DataLoader:
             errmsg = "`get_reward` did not set the `reward` tensor."
             raise RuntimeError(errmsg)
         reward: Tensor = data["next", "reward"]
+        assert isinstance(reward, Tensor)
         if reward.dim() not in (1, 2):
             errmsg = "An invalid shape of the `reward` tensor."
             raise RuntimeError(errmsg)
@@ -163,5 +166,6 @@ class DataLoader:
         if reward.dtype not in (torch.float64, torch.float32, torch.float16):
             errmsg = "An invalid `dtype` for the `reward` tensor."
             raise RuntimeError(errmsg)
+        data["next", "reward"] = reward.to(dtype=self.__dtype)
 
         return data
