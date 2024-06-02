@@ -87,7 +87,7 @@ def _train(
     }
     grad_scaler = GradScaler(enabled=is_amp_enabled)
 
-    last_snapshot = None
+    last_snapshot: int | None = None
     if snapshot_interval > 0:
         last_snapshot = 0
 
@@ -97,6 +97,7 @@ def _train(
 
     for data in data_loader:
         sparse: Tensor = data["sparse"]
+        assert isinstance(sparse, Tensor)
         assert sparse.device == torch.device("cpu")
         assert sparse.dtype == torch.int32
         assert sparse.dim() == 2
@@ -114,6 +115,7 @@ def _train(
             network_tdm(data)
 
         decode: Tensor = data["decode"]
+        assert isinstance(decode, Tensor)
         assert decode.device == device
         assert decode.dtype == dtype
         assert decode.dim() == 3
@@ -129,13 +131,14 @@ def _train(
         assert decode.size(1) == 4
 
         results: Tensor = data["results"]
+        assert isinstance(results, Tensor)
         assert results.device == device
         assert results.dtype == torch.int32
         assert results.dim() == 2
         assert results.size(0) == batch_size
         assert results.size(1) == NUM_RESULTS
 
-        eog_scores: Tensor = results[:, 10:14]
+        eog_scores = results[:, 10:14]
         assert eog_scores.device == device
         assert eog_scores.dtype == torch.int32
         assert eog_scores.dim() == 2
@@ -184,7 +187,8 @@ def _train(
             if is_grad_nan.item() >= 1:
                 if local_rank == 0:
                     logging.warning(
-                        "Skip an optimization step because of NaN in the gradient."
+                        "Skip an optimization step "
+                        "because of NaN in the gradient."
                     )
                 optimizer.zero_grad()
                 continue
@@ -192,8 +196,7 @@ def _train(
             grad_scaler.unscale_(optimizer)
             gradient = get_gradient(network_tdm)
             # pylint: disable=not-callable
-            gradient_norm = torch.linalg.vector_norm(gradient).item()
-            assert isinstance(gradient_norm, float)
+            gradient_norm = float(torch.linalg.vector_norm(gradient).item())
             nn.utils.clip_grad_norm_(
                 network_tdm.parameters(),
                 max_gradient_norm,
