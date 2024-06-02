@@ -493,6 +493,9 @@ def _main(config: DictConfig) -> None:
         else:
             logging.info("Snapshot interval: %d", config.snapshot_interval)
 
+    if world_size >= 2:
+        init_process_group(backend="nccl")
+
     encoder = Encoder(
         position_encoder=config.encoder.position_encoder,
         dimension=config.encoder.dimension,
@@ -523,6 +526,8 @@ def _main(config: DictConfig) -> None:
         device=torch.device("cpu"),
         dtype=dtype,
     )
+    for _param in decoder.parameters():
+        _param.zero_()
     decoder_tdm = TensorDictModule(
         decoder, in_keys=["encode"], out_keys=["decode"]
     )
@@ -535,12 +540,11 @@ def _main(config: DictConfig) -> None:
     network_tdm = TensorDictSequential(
         encoder_tdm, decoder_tdm, decode_converter_tdm
     )
-    network_tdm = network_tdm.to(device=device, dtype=dtype)
     if world_size >= 2:
-        init_process_group(backend="nccl")
-        network_tdm = DistributedDataParallel(network_tdm)
-        network_tdm = nn.SyncBatchNorm.convert_sync_batchnorm(network_tdm)
-        assert isinstance(network_tdm, nn.Module)
+        network_tdm.to(device=device)
+        for _param in network_tdm.parameters():
+            broadcast(_param.data, src=0)
+        network_tdm.to(device="cpu")
 
     argmax_layer = DecodeConverter("argmax")
     argmax_tdm = TensorDictModule(
@@ -549,7 +553,6 @@ def _main(config: DictConfig) -> None:
     network_tdm_to_save = TensorDictSequential(
         encoder_tdm, decoder_tdm, argmax_tdm
     )
-    network_tdm_to_save = network_tdm_to_save.to(device=device, dtype=dtype)
 
     optimizer, scheduler = _config.optimizer.create(config, network_tdm)
 
@@ -561,8 +564,6 @@ def _main(config: DictConfig) -> None:
             config.encoder.load_from, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
-        if device.type == "cuda":
-            encoder.cuda()
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -572,16 +573,12 @@ def _main(config: DictConfig) -> None:
             encoder_snapshot_path, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
-        if device.type == "cuda":
-            encoder.cuda()
 
         assert decoder_snapshot_path is not None
         decoder_state_dict = torch.load(
             decoder_snapshot_path, map_location="cpu"
         )
         decoder.load_state_dict(decoder_state_dict)
-        if device.type == "cuda":
-            decoder.cuda()
 
         if optimizer_snapshot_path is not None:
             optimizer.load_state_dict(
@@ -593,6 +590,18 @@ def _main(config: DictConfig) -> None:
             scheduler.load_state_dict(
                 torch.load(scheduler_snapshot_path, map_location="cpu")
             )
+
+    network_tdm.requires_grad_(True)
+    network_tdm.train()
+    network_tdm = network_tdm.to(device=device, dtype=dtype)
+    if world_size >= 2:
+        network_tdm = DistributedDataParallel(network_tdm)
+        network_tdm = nn.SyncBatchNorm.convert_sync_batchnorm(network_tdm)
+        assert isinstance(network_tdm, nn.Module)
+
+    network_tdm_to_save.requires_grad_(True)
+    network_tdm_to_save.train()
+    network_tdm_to_save = network_tdm_to_save.to(device=device, dtype=dtype)
 
     snapshots_path = output_prefix / "snapshots"
 
