@@ -15,7 +15,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import GradScaler
-from torch.distributed import init_process_group, ReduceOp, all_reduce
+from torch.distributed import (
+    init_process_group,
+    broadcast,
+    ReduceOp,
+    all_reduce,
+)
 from torch.utils.tensorboard.writer import SummaryWriter
 from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
@@ -537,6 +542,9 @@ def _main(config: DictConfig) -> None:
         else:
             logging.info("Snapshot interval: %d", config.snapshot_interval)
 
+    if world_size >= 2:
+        init_process_group(backend="nccl")
+
     encoder = Encoder(
         position_encoder=config.encoder.position_encoder,
         dimension=config.encoder.dimension,
@@ -567,16 +575,17 @@ def _main(config: DictConfig) -> None:
         device=torch.device("cpu"),
         dtype=dtype,
     )
+    for _param in decoder.parameters():
+        _param.zero_()
     decoder_tdm = TensorDictModule(
         decoder, in_keys=["encode"], out_keys=["decode"]
     )
     network_tdm = TensorDictSequential(encoder_tdm, decoder_tdm)
-    network_tdm.to(device=device, dtype=dtype)
     if world_size >= 2:
-        init_process_group(backend="nccl")
-        network_tdm = DistributedDataParallel(network_tdm)
-        network_tdm = nn.SyncBatchNorm.convert_sync_batchnorm(network_tdm)
-        assert isinstance(network_tdm, nn.Module)
+        network_tdm.to(device=device)
+        for _param in network_tdm.parameters():
+            broadcast(_param.data, src=0)
+        network_tdm.to(device="cpu")
 
     softmax = nn.Softmax(2)
     softmax_tdm = TensorDictModule(
@@ -596,8 +605,6 @@ def _main(config: DictConfig) -> None:
             config.encoder.load_from, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
-        if device.type == "cuda":
-            encoder.cuda()
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -608,15 +615,11 @@ def _main(config: DictConfig) -> None:
             encoder_snapshot_path, map_location="cpu"
         )
         encoder.load_state_dict(encoder_state_dict)
-        if device.type == "cuda":
-            encoder.cuda()
 
         decoder_state_dict = torch.load(
             decoder_snapshot_path, map_location="cpu"
         )
         decoder.load_state_dict(decoder_state_dict)
-        if device.type == "cuda":
-            decoder.cuda()
 
         if optimizer_snapshot_path is not None:
             optimizer.load_state_dict(
@@ -628,6 +631,18 @@ def _main(config: DictConfig) -> None:
             scheduler.load_state_dict(
                 torch.load(scheduler_snapshot_path, map_location="cpu")
             )
+
+    network_tdm.requires_grad_(True)
+    network_tdm.train()
+    network_tdm.to(device=device, dtype=dtype)
+    if world_size >= 2:
+        network_tdm = DistributedDataParallel(network_tdm)
+        network_tdm = nn.SyncBatchNorm.convert_sync_batchnorm(network_tdm)
+        assert isinstance(network_tdm, nn.Module)
+
+    network_tdm_to_save.requires_grad_(True)
+    network_tdm_to_save.train()
+    network_tdm_to_save.to(device=device, dtype=dtype)
 
     snapshots_path = output_prefix / "snapshots"
 
