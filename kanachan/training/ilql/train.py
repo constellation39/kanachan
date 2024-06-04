@@ -250,6 +250,8 @@ def _train(
             dtype=dtype,
             max_size=replay_buffer_size,
             batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=(num_workers >= 1),
             drop_last=(world_size >= 2),
         )
     else:
