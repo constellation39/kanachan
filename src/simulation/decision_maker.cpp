@@ -48,9 +48,11 @@ class DecisionMaker::Impl_
 {
 public:
     Impl_(
-        python::object device, python::object dtype, python::object baseline_model,
-        python::list baseline_keys_to_be_deleted, python::object proposed_model,
-        python::list proposed_keys_to_be_deleted, std::size_t batch_size);
+        python::object device,
+        python::object dtype,
+        python::object baseline_model,
+        python::object proposed_model,
+        std::size_t batch_size);
 
     Impl_(Impl_ const &) = delete;
 
@@ -60,16 +62,23 @@ public:
 
 private:
     std::tuple<python::object, python::object> decide_(
-        python::object sparse_batch, python::object numeric_batch,
-        python::object progression_batch, python::object candidates_batch, bool proposed);
+        python::object sparse_batch,
+        python::object numeric_batch,
+        python::object progression_batch,
+        python::object candidates_batch,
+        bool proposed);
 
     void threadMain_(std::stop_token stop_token);
 
 public:
     std::uint_fast16_t operator()(
-        bool proposed, std::uint_fast8_t seat, std::vector<std::uint_fast16_t> &&sparse,
-        std::vector<std::uint_fast32_t> &&numeric, std::vector<std::uint_fast16_t> &&progression,
-        std::vector<std::uint_fast16_t> &&candidates, std::stop_token stop_token,
+        bool proposed,
+        std::uint_fast8_t seat,
+        std::vector<std::uint_fast16_t> &&sparse,
+        std::vector<std::uint_fast32_t> &&numeric,
+        std::vector<std::uint_fast16_t> &&progression,
+        std::vector<std::uint_fast16_t> &&candidates,
+        std::stop_token stop_token,
         Kanachan::GameLog &game_log);
 
     void run();
@@ -102,7 +111,6 @@ private:
     std::vector<Kanachan::GameLog *> baseline_game_logs_;
     std::size_t baseline_batch_index_;
     std::size_t baseline_result_count_;
-    python::list baseline_keys_to_be_deleted_;
     python::object proposed_model_;
     std::vector<std::uint_fast8_t> proposed_seat_batch_;
     std::vector<std::vector<std::uint_fast16_t>> proposed_sparse_batch_;
@@ -113,16 +121,17 @@ private:
     std::vector<Kanachan::GameLog *> proposed_game_logs_;
     std::size_t proposed_batch_index_;
     std::size_t proposed_result_count_;
-    python::list proposed_keys_to_be_deleted_;
     std::uint_fast8_t state_;
     mutable std::mutex mtx_;
     std::condition_variable_any cv_;
 }; // class DecisionMaker::Impl_
 
 DecisionMaker::DecisionMaker(
-    python::object device, python::object dtype, python::object baseline_model, 
-    python::list baseline_keys_to_be_deleted, python::object proposed_model,
-    python::list proposed_keys_to_be_deleted, std::size_t const batch_size)
+    python::object device,
+    python::object dtype,
+    python::object baseline_model, 
+    python::object proposed_model,
+    std::size_t const batch_size)
     : p_impl_()
 {
     if (PyGILState_Check() == 0) {
@@ -144,9 +153,7 @@ DecisionMaker::DecisionMaker(
         KANACHAN_THROW<std::invalid_argument>("`batch_size` must be a positive integer.");
     }
 
-    p_impl_ = std::make_shared<Impl_>(
-        device, dtype, baseline_model, baseline_keys_to_be_deleted, proposed_model,
-        proposed_keys_to_be_deleted, batch_size);
+    p_impl_ = std::make_shared<Impl_>(device, dtype, baseline_model, proposed_model, batch_size);
 }
 
 void DecisionMaker::shrinkBatchSizeToFitNumThreads(std::size_t const num_threads)
@@ -159,9 +166,13 @@ void DecisionMaker::shrinkBatchSizeToFitNumThreads(std::size_t const num_threads
 }
 
 std::uint_fast16_t DecisionMaker::operator()(
-    bool const proposed, std::uint8_t const seat, std::vector<std::uint_fast16_t> &&sparse,
-    std::vector<std::uint_fast32_t> &&numeric, std::vector<std::uint_fast16_t> &&progression,
-    std::vector<std::uint_fast16_t> &&candidates, std::stop_token stop_token,
+    bool const proposed,
+    std::uint8_t const seat,
+    std::vector<std::uint_fast16_t> &&sparse,
+    std::vector<std::uint_fast32_t> &&numeric,
+    std::vector<std::uint_fast16_t> &&progression,
+    std::vector<std::uint_fast16_t> &&candidates,
+    std::stop_token stop_token,
     Kanachan::GameLog &game_log)
 {
     if (PyGILState_Check() == 1) {
@@ -180,9 +191,11 @@ void DecisionMaker::run()
 }
 
 DecisionMaker::Impl_::Impl_(
-    python::object device, python::object dtype, python::object baseline_model,
-    python::list baseline_keys_to_be_deleted, python::object proposed_model,
-    python::list proposed_keys_to_be_deleted, std::size_t const batch_size)
+    python::object device,
+    python::object dtype,
+    python::object baseline_model,
+    python::object proposed_model,
+    std::size_t const batch_size)
 try : torch_(python::import("torch"))
     , tensordict_(python::import("tensordict"))
     , tensor_(torch_.attr("tensor"))
@@ -210,7 +223,6 @@ try : torch_(python::import("torch"))
     , baseline_game_logs_(batch_size, nullptr)
     , baseline_batch_index_(0u)
     , baseline_result_count_(0u)
-    , baseline_keys_to_be_deleted_(baseline_keys_to_be_deleted)
     , proposed_model_(proposed_model)
     , proposed_seat_batch_(batch_size)
     , proposed_sparse_batch_(batch_size_)
@@ -221,7 +233,6 @@ try : torch_(python::import("torch"))
     , proposed_game_logs_(batch_size, nullptr)
     , proposed_batch_index_(0u)
     , proposed_result_count_(0u)
-    , proposed_keys_to_be_deleted_(proposed_keys_to_be_deleted)
     , state_(0u)
     , mtx_()
     , cv_()
@@ -302,97 +313,113 @@ void DecisionMaker::Impl_::shrinkBatchSizeToFitNumThreads(std::size_t const num_
 }
 
 std::tuple<python::object, python::object> DecisionMaker::Impl_::decide_(
-    python::object sparse_batch, python::object numeric_batch, python::object progression_batch,
-    python::object candidates_batch, bool const proposed)
+    python::object sparse_batch,
+    python::object numeric_batch,
+    python::object progression_batch,
+    python::object candidates_batch,
+    bool const proposed)
 try {
     KANACHAN_ASSERT((PyGILState_Check() == 1));
 
     long const batch_size = python::extract<long>(sparse_batch.attr("size")(0))();
 
-    // data = TensorDict({
-    //     'sparse': sparse,
-    //     'numeric': numeric,
-    //     'progression': progression,
-    //     'candidates': candidates }, batch_size=[batch_size], device=device_)
-    python::object data;
+    // result = TensorDict({}, batch_size=[batch_size], device=device_)
+    python::object result;
     {
         python::dict source;
-        source["sparse"] = sparse_batch;
-        source["numeric"] = numeric_batch;
-        source["progression"] = progression_batch;
-        source["candidates"] = candidates_batch;
         python::tuple args = python::make_tuple(source);
         python::dict kwargs;
         kwargs["batch_size"] = python::list();
         kwargs["batch_size"].attr("append")(batch_size);
         kwargs["device"] = device_;
-        data = tensordict_.attr("TensorDict")(*args, **kwargs);
-    }
-
-    {
-        python::object model = proposed ? proposed_model_ : baseline_model_;
-        model(data);
-
-        python::list keys_to_be_deleted = proposed ? proposed_keys_to_be_deleted_ : baseline_keys_to_be_deleted_;
-        for (python::ssize_t i = 0u; i < python::len(keys_to_be_deleted); ++i) {
-            python::object key = keys_to_be_deleted[i];
-            if (!data.attr("get")(key, python::object()).is_none()) {
-                data.attr("del_")(key);
-            }
-        }
-        // The `detach_` method cannot be used in conjunction with DDP.
-        data = data.attr("detach")();
-    }
-
-    // action_index_batch = data.get('action', None)
-    python::object action_index_batch = data.attr("get")("action", python::object());
-    if (action_index_batch.is_none()) {
-        KANACHAN_THROW<std::runtime_error>("The model did not output the `action` tensor.");
-    }
-    if (action_index_batch.attr("dim")() != 1) {
-        long const dim = python::extract<long>(action_index_batch.attr("dim")())();
-        KANACHAN_THROW<std::runtime_error>(_1) << dim << ": An invalid dimension.";
-    }
-    if (action_index_batch.attr("size")(0) != batch_size) {
-        long const size = python::extract<long>(action_index_batch.attr("size")(0))();
-        KANACHAN_THROW<std::runtime_error>(_1) << size << " != " << batch_size;
-    }
-
-    // log_prob_batch = data.get('sample_log_prob', None)
-    python::object log_prob_batch = data.attr("get")("sample_log_prob", python::object());
-    if (!log_prob_batch.is_none()) {
-        if (log_prob_batch.attr("dim")() != 1) {
-            long const dim = python::extract<long>(log_prob_batch.attr("dim")())();
-            KANACHAN_THROW<std::runtime_error>(_1) << dim << ": An invalid dimension.";
-        }
-        if (log_prob_batch.attr("size")(0) != batch_size) {
-            long const size = python::extract<long>(log_prob_batch.attr("size")(0))();
-            KANACHAN_THROW<std::runtime_error>(_1) << size << " != " << batch_size;
-        }
-    }
-
-    for (python::ssize_t i = 0u; i < batch_size; ++i) {
-        python::object index = action_index_batch[i].attr("item")();
-        python::object candidate = candidates_batch[i][index];
-        if (candidate >= num_types_of_actions_) {
-            std::ostringstream oss;
-            oss << "An invalid decision: " << python::extract<long>(index)() << '\n';
-            for (python::ssize_t j = 0u; j < max_num_action_candidates_; ++j) {
-                long const candidate_ = python::extract<long>(candidates_batch[i][j].attr("item")());
-                oss << "  " << candidate_  << '\n';
-            }
-            KANACHAN_THROW<std::logic_error>(_1) << oss.str();
-        }
+        result = tensordict_.attr("TensorDict")(*args, **kwargs);
     }
 
     python::object decision_batch;
     {
+        // data = TensorDict(
+        //     {
+        //         'sparse': sparse,
+        //         'numeric': numeric,
+        //         'progression': progression,
+        //         'candidates': candidates,
+        //     },
+        //     batch_size=[batch_size],
+        //     device=device_,
+        // )
+        python::object data;
+        {
+            python::dict source;
+            source["sparse"] = sparse_batch;
+            source["numeric"] = numeric_batch;
+            source["progression"] = progression_batch;
+            source["candidates"] = candidates_batch;
+            python::tuple args = python::make_tuple(source);
+            python::dict kwargs;
+            kwargs["batch_size"] = python::list();
+            kwargs["batch_size"].attr("append")(batch_size);
+            kwargs["device"] = device_;
+            data = tensordict_.attr("TensorDict")(*args, **kwargs);
+        }
+
+        python::object model = proposed ? proposed_model_ : baseline_model_;
+        model(data);
+
+        result["sparse"] = data["sparse"];
+        result["numeric"] = data["numeric"];
+        result["progression"] = data["progression"];
+        result["candidates"] = data["candidates"];
+
+        // action_index_batch = data.get('action', None)
+        python::object action_index_batch = data.attr("get")("action", python::object());
+        if (action_index_batch.is_none()) {
+            KANACHAN_THROW<std::runtime_error>("The model did not output the `action` tensor.");
+        }
+        if (action_index_batch.attr("dim")() != 1) {
+            long const dim = python::extract<long>(action_index_batch.attr("dim")())();
+            KANACHAN_THROW<std::runtime_error>(_1) << dim << ": An invalid dimension.";
+        }
+        if (action_index_batch.attr("size")(0) != batch_size) {
+            long const size = python::extract<long>(action_index_batch.attr("size")(0))();
+            KANACHAN_THROW<std::runtime_error>(_1) << size << " != " << batch_size;
+        }
+        result["action"] = data["action"].attr("detach")().attr("clone")();
+
+        // log_prob_batch = data.get('sample_log_prob', None)
+        python::object log_prob_batch = data.attr("get")("sample_log_prob", python::object());
+        if (!log_prob_batch.is_none()) {
+            if (log_prob_batch.attr("dim")() != 1) {
+                long const dim = python::extract<long>(log_prob_batch.attr("dim")())();
+                KANACHAN_THROW<std::runtime_error>(_1) << dim << ": An invalid dimension.";
+            }
+            if (log_prob_batch.attr("size")(0) != batch_size) {
+                long const size = python::extract<long>(log_prob_batch.attr("size")(0))();
+                KANACHAN_THROW<std::runtime_error>(_1) << size << " != " << batch_size;
+            }
+            result["sample_log_prob"] = log_prob_batch.attr("detach")().attr("clone")();
+        }
+
+        for (python::ssize_t i = 0u; i < batch_size; ++i) {
+            python::object index = action_index_batch[i].attr("item")();
+            python::object candidate = candidates_batch[i][index];
+            if (candidate >= num_types_of_actions_) {
+                std::ostringstream oss;
+                oss << "An invalid decision: " << python::extract<long>(index)() << '\n';
+                for (python::ssize_t j = 0u; j < max_num_action_candidates_; ++j) {
+                    long const candidate_ = python::extract<long>(candidates_batch[i][j].attr("item")());
+                    oss << "  " << candidate_  << '\n';
+                }
+                KANACHAN_THROW<std::logic_error>(_1) << oss.str();
+            }
+        }
+
+        // decision_batch = candidates_batch[torch.arange(batch_size), action_index_batch]
         python::object arange = torch_.attr("arange")(batch_size);
         decision_batch \
             = candidates_batch.attr("__getitem__")(python::make_tuple(arange, action_index_batch));
     }
 
-    return { data, decision_batch };
+    return { result, decision_batch };
 }
 catch (python::error_already_set const &) {
     try {
@@ -627,9 +654,13 @@ catch (python::error_already_set const &) {
 }
 
 std::uint_fast16_t DecisionMaker::Impl_::operator()(
-    bool const proposed, std::uint_fast8_t const seat, std::vector<std::uint_fast16_t> &&sparse,
-    std::vector<std::uint_fast32_t> &&numeric, std::vector<std::uint_fast16_t> &&progression,
-    std::vector<std::uint_fast16_t> &&candidates, std::stop_token stop_token,
+    bool const proposed,
+    std::uint_fast8_t const seat,
+    std::vector<std::uint_fast16_t> &&sparse,
+    std::vector<std::uint_fast32_t> &&numeric,
+    std::vector<std::uint_fast16_t> &&progression,
+    std::vector<std::uint_fast16_t> &&candidates,
+    std::stop_token stop_token,
     Kanachan::GameLog &game_log)
 try {
     KANACHAN_ASSERT((PyGILState_Check() == 0));

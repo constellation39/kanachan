@@ -17,15 +17,24 @@
 namespace Kanachan{
 
 boost::python::list simulate(
-  boost::python::object device, boost::python::object dtype, long room, long baseline_grade,
-  boost::python::object baseline_model, boost::python::list baseline_keys_to_be_deleted,
-  long proposed_grade, boost::python::object proposed_model,
-  boost::python::list proposed_keys_to_be_deleted, long simulation_mode, long num_simulation_sets,
-  long batch_size, long concurrency, boost::python::object progress);
+  boost::python::object device,
+  boost::python::object dtype,
+  long room,
+  long baseline_grade,
+  boost::python::object baseline_model,
+  long proposed_grade,
+  boost::python::object proposed_model,
+  long simulation_mode,
+  long num_simulation_sets,
+  long batch_size,
+  long concurrency,
+  boost::python::object progress);
 
 std::shared_ptr<Kanachan::GameLog> test(
-  boost::python::long_ simulation_mode, boost::python::tuple grades,
-  boost::python::object test_model, boost::python::list test_paishan_list);
+  boost::python::long_ simulation_mode,
+  boost::python::tuple grades,
+  boost::python::object test_model,
+  boost::python::list test_paishan_list);
 
 } // namespace Kanachan
 

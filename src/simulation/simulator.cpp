@@ -51,12 +51,18 @@ private:
 
 public:
     Impl_(
-        python::object device, python::object dtype, std::uint_fast8_t room,
-        std::uint_fast8_t baseline_grade, python::object baseline_model,
-        python::list baseline_keys_to_be_deleted, std::uint_fast8_t proposed_grade,
-        python::object proposed_model, python::list proposed_keys_to_be_deleted,
-        unsigned long simulation_mode, std::size_t num_simulation_sets, std::size_t batch_size,
-        std::size_t concurrency, python::object progress);
+        python::object device,
+        python::object dtype,
+        std::uint_fast8_t room,
+        std::uint_fast8_t baseline_grade,
+        python::object baseline_model,
+        std::uint_fast8_t proposed_grade,
+        python::object proposed_model,
+        unsigned long simulation_mode,
+        std::size_t num_simulation_sets,
+        std::size_t batch_size,
+        std::size_t concurrency,
+        python::object progress);
 
     Impl_(Impl_ const &) = delete;
 
@@ -81,16 +87,31 @@ private:
 }; // class Simulator::Impl_
 
 Simulator::Simulator(
-    python::object device, python::object dtype, std::uint_fast8_t const room,
-    std::uint_fast8_t const baseline_grade, python::object baseline_model,
-    python::list baseline_keys_to_be_deleted, std::uint_fast8_t const proposed_grade,
-    python::object proposed_model, python::list proposed_keys_to_be_deleted,
-    unsigned long const simulation_mode, std::size_t const num_simulation_sets,
-    std::size_t const batch_size, std::size_t const concurrency, python::object progress)
+    python::object device,
+    python::object dtype,
+    std::uint_fast8_t const room,
+    std::uint_fast8_t const baseline_grade,
+    python::object baseline_model,
+    std::uint_fast8_t const proposed_grade,
+    python::object proposed_model,
+    unsigned long const simulation_mode,
+    std::size_t const num_simulation_sets,
+    std::size_t const batch_size,
+    std::size_t const concurrency,
+    python::object progress)
     : p_impl_(std::make_shared<Impl_>(
-        device, dtype, room, baseline_grade, baseline_model, baseline_keys_to_be_deleted,
-        proposed_grade, proposed_model, proposed_keys_to_be_deleted, simulation_mode,
-        num_simulation_sets, batch_size, concurrency, progress))
+        device,
+        dtype,
+        room,
+        baseline_grade,
+        baseline_model,
+        proposed_grade,
+        proposed_model,
+        simulation_mode,
+        num_simulation_sets,
+        batch_size,
+        concurrency,
+        progress))
 {}
 
 python::list Simulator::run()
@@ -103,18 +124,23 @@ python::list Simulator::run()
 }
 
 Simulator::Impl_::Impl_(
-    python::object device, python::object dtype, std::uint_fast8_t const room,
-    std::uint_fast8_t const baseline_grade, python::object baseline_model,
-    python::list baseline_keys_to_be_deleted, std::uint_fast8_t const proposed_grade,
-    python::object proposed_model, python::list proposed_keys_to_be_deleted,
-    unsigned long const simulation_mode, std::size_t const num_simulation_sets,
-    std::size_t const batch_size, std::size_t const concurrency, python::object progress)
+    python::object device,
+    python::object dtype,
+    std::uint_fast8_t const room,
+    std::uint_fast8_t const baseline_grade,
+    python::object baseline_model,
+    std::uint_fast8_t const proposed_grade,
+    python::object proposed_model,
+    unsigned long const simulation_mode,
+    std::size_t const num_simulation_sets,
+    std::size_t const batch_size,
+    std::size_t const concurrency,
+    python::object progress)
     : dong_feng_zhan_(simulation_mode & 2u)
     , room_(room)
     , p_decision_maker_(
           std::make_shared<Kanachan::DecisionMaker>(
-              device, dtype, baseline_model, baseline_keys_to_be_deleted, proposed_model,
-              proposed_keys_to_be_deleted, batch_size))
+              device, dtype, baseline_model, proposed_model, batch_size))
     , threads_()
     , game_initializers_()
     , game_logs_()

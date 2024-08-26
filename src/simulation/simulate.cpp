@@ -45,11 +45,17 @@ namespace python = boost::python;
 namespace Kanachan{
 
 python::list simulate(
-  python::object device, python::object dtype, long const room, long const baseline_grade,
-  python::object baseline_model, python::list baseline_keys_to_be_deleted,
-  long const proposed_grade, python::object proposed_model,
-  python::list proposed_keys_to_be_deleted, long const simulation_mode,
-  long const num_simulation_sets, long const batch_size, long const concurrency,
+  python::object device,
+  python::object dtype,
+  long const room,
+  long const baseline_grade,
+  python::object baseline_model,
+  long const proposed_grade,
+  python::object proposed_model,
+  long const simulation_mode,
+  long const num_simulation_sets,
+  long const batch_size,
+  long const concurrency,
   python::object progress)
 try {
   if (PyGILState_Check() == 0) {
@@ -80,9 +86,18 @@ try {
   }
 
   Kanachan::Simulator simulator(
-    device, dtype, room, baseline_grade, baseline_model, baseline_keys_to_be_deleted,
-    proposed_grade, proposed_model, proposed_keys_to_be_deleted, simulation_mode,
-    num_simulation_sets, batch_size, concurrency, progress);
+    device,
+    dtype,
+    room,
+    baseline_grade,
+    baseline_model,
+    proposed_grade,
+    proposed_model,
+    simulation_mode,
+    num_simulation_sets,
+    batch_size,
+    concurrency,
+    progress);
   python::list result = simulator.run();
   return result;
 }
@@ -107,8 +122,10 @@ catch (...) {
 #pragma GCC diagnostic pop
 
 std::shared_ptr<Kanachan::GameLog> test(
-  python::long_ const simulation_mode, python::tuple const grades,
-  python::object test_model, python::list const test_paishan_list)
+  python::long_ const simulation_mode,
+  python::tuple const grades,
+  python::object test_model,
+  python::list const test_paishan_list)
 try {
   if (simulation_mode.is_none()) {
     KANACHAN_THROW<std::invalid_argument>(_1) << "`simulation_mode` is `None`.";
@@ -168,8 +185,11 @@ try {
     KANACHAN_THROW<std::invalid_argument>(_1) << "`grades` is `None`.";
   }
   auto p_test_decision_maker = std::make_shared<Kanachan::DecisionMaker>(
-    python::import("torch").attr("device")("cpu"), python::import("torch").attr("float64"),
-    test_model, python::list(), test_model, python::list(), 1u);
+    python::import("torch").attr("device")("cpu"),
+    python::import("torch").attr("float64"),
+    test_model,
+    test_model,
+    1u);
 
   if (test_paishan_list.is_none()) {
     KANACHAN_THROW<std::invalid_argument>(_1) << "`test_paishan_list` is `None`.";
