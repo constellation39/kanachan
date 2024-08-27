@@ -106,6 +106,12 @@ export LD_LIBRARY_PATH="$HOME/.local/lib64:$HOME/.local/lib${LD_LIBRARY_PATH:+:$
 echo 'export PATH="$HOME/.local/bin${PATH:+:$PATH}"' >> "$HOME/.bashrc"
 echo 'export PATH="$HOME/.local/bin${PATH:+:$PATH}"' >> "$HOME/.profile"
 export PATH="$HOME/.local/bin${PATH:+:$PATH}"
+echo 'export CC="$HOME/.local/bin/gcc"' >> "$HOME/.bashrc"
+echo 'export CC="$HOME/.local/bin/gcc"' >> "$HOME/.profile"
+export CC="$HOME/.local/bin/gcc"
+echo 'export CXX="$HOME/.local/bin/g++"' >> "$HOME/.bashrc"
+echo 'export CXX="$HOME/.local/bin/g++"' >> "$HOME/.profile"
+export CXX="$HOME/.local/bin/g++"
 
 # Install CMake.
 /workspaces/prerequisites/cmake/install --debug --prefix "$HOME/.local"
@@ -156,7 +162,7 @@ popd
 # Build kanachan.
 mkdir -p /workspaces/kanachan/build
 pushd /workspaces/kanachan/build
-CC="$HOME/.local/bin/gcc" CXX="$HOME/.local/bin/g++" cmake \
+cmake \
   -DSHANTEN_NUMBER_SOURCE_PATH=/workspaces/shanten-number \
   -DCMAKE_BUILD_TYPE=Release \
   ..
