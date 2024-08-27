@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-PYTHON_VERSION=3.9.11
+PYTHON_VERSION=latest
 
 PS4='+${BASH_SOURCE[0]}:$LINENO: '
 if [[ -t 1 ]] && type -t tput >/dev/null; then
@@ -31,17 +31,14 @@ sudo apt-get -y install \
 
 sudo chown vscode:vscode /workspaces
 
-# Install CUDA 12.1.1. See https://docs.nvidia.com/cuda/wsl-user-guide/index.html#getting-started-with-cuda-on-wsl.
+# Install CUDA 12.4.
 pushd /workspaces
-wget 'https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-wsl-ubuntu.pin'
-sudo mv cuda-wsl-ubuntu.pin /etc/apt/preferences.d/cuda-repository-pin-600
-wget 'https://developer.download.nvidia.com/compute/cuda/12.1.1/local_installers/cuda-repo-wsl-ubuntu-12-1-local_12.1.1-1_amd64.deb'
-sudo dpkg -i cuda-repo-wsl-ubuntu-12-1-local_12.1.1-1_amd64.deb
-rm -f cuda-repo-wsl-ubuntu-12-1-local_12.1.1-1_amd64.deb
-popd
-sudo cp /var/cuda-repo-wsl-ubuntu-12-1-local/cuda-*-keyring.gpg /usr/share/keyrings/
+wget 'https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb'
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+rm -f cuda-keyring_1.1-1_all.deb
 sudo apt-get update
-sudo apt-get -y install cuda
+sudo apt-get -y install cuda-toolkit-12-4
+popd
 
 # Install `pyenv`.
 curl 'https://pyenv.run' | bash
@@ -76,7 +73,7 @@ python3 -m pip install -U \
   wheel
 
 # Install PyTorch.
-python3 -m pip install -U torch --index-url 'https://download.pytorch.org/whl/cu121'
+python3 -m pip install -U torch --index-url 'https://download.pytorch.org/whl/cu124'
 
 # Install Apex.
 pushd /workspaces
