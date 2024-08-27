@@ -8,4 +8,6 @@ target_link_libraries(common
   PRIVATE protobuf
   PRIVATE Boost::stacktrace_backtrace
   PRIVATE Boost::headers)
-set_property(TARGET common PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(common
+  PROPERTIES
+  POSITION_INDEPENDENT_CODE ON)

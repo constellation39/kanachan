@@ -5,17 +5,30 @@ enable_testing()
 
 if (NOT DEFINED PYTHON_VERSION)
   execute_process(
-    COMMAND bash "-c" "python --version | grep -Eo '^Python [[:digit:]]+\\.[[:digit:]]+' | grep -Eo '[[:digit:]]+\\.[[:digit:]]+'"
+    COMMAND bash "-c" "python3 --version | grep -Eo '^Python [[:digit:]]+\\.[[:digit:]]+' | grep -Eo '[[:digit:]]+\\.[[:digit:]]+'"
     OUTPUT_VARIABLE PYTHON_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
+if (NOT DEFINED PYTHON_PREFIX)
+  execute_process(
+    COMMAND python3 -c "import sys; print(sys.prefix);"
+    OUTPUT_VARIABLE PYTHON_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
 if (NOT DEFINED PYTHON_INCLUDE_PATH)
-  set(PYTHON_INCLUDE_PATH /usr/include/python${PYTHON_VERSION})
+  set(PYTHON_INCLUDE_PATH "${PYTHON_PREFIX}/include/python${PYTHON_VERSION}")
+endif()
+
+if (NOT DEFINED PYTHON_LIBRARY_PATH)
+  set(PYTHON_LIBRARY_PATH "${PYTHON_PREFIX}/lib")
 endif()
 
 message("PYTHON_VERSION=${PYTHON_VERSION}")
+message("PYTHON_PREFIX=${PYTHON_PREFIX}")
 message("PYTHON_INCLUDE_PATH=${PYTHON_INCLUDE_PATH}")
+message("PYTHON_LIBRARY_PATH=${PYTHON_LIBRARY_PATH}")
 
 message("CMAKE_C_COMPILER=${CMAKE_C_COMPILER}")
 message("CMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}")
@@ -25,6 +38,10 @@ set(CMAKE_CXX_STANDARD 20)
 include_directories(
   "${PYTHON_INCLUDE_PATH}"
   src)
+
+if (NOT (PYTHON_LIBRARY_PATH STREQUAL ""))
+  link_directories("${PYTHON_LIBRARY_PATH}")
+endif()
 
 if (("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") OR ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"))
   add_compile_options(-Werror)
@@ -104,10 +121,8 @@ else()
   set(Boost_USE_RELEASE_LIBS ON)
 endif()
 
-set(BOOST_ROOT "$ENV{HOME}/.local")
-find_package(Boost
-  REQUIRED
-  COMPONENTS stacktrace_backtrace python)
+find_package(boost_stacktrace_backtrace REQUIRED)
+find_package(boost_python REQUIRED)
 
 add_compile_definitions(BOOST_STACKTRACE_USE_BACKTRACE)
 
