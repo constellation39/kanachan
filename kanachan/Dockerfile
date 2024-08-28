@@ -1,6 +1,8 @@
-ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.1.1-devel-ubuntu22.04
+ARG BASE_IMAGE=nvcr.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+ARG PYTHON_VERSION=latest
 ARG BUILD_TYPE=Release
 FROM $BASE_IMAGE
+ARG PYTHON_VERSION
 ARG BUILD_TYPE
 
 SHELL ["/bin/bash", "-c"]
@@ -14,13 +16,17 @@ RUN set -euxo pipefail; \
       automake \
       curl \
       git-core \
+      libbz2-dev \
+      libffi-dev \
+      liblzma-dev \
+      libncurses-dev \
+      libreadline-dev \
+      libsqlite3-dev \
       libssl-dev \
       libtool \
       locales \
       locales-all \
-      protobuf-compiler \
-      python3-dev \
-      python3-venv; \
+      protobuf-compiler; \
     apt-get clean && rm -rf /var/lib/apt/lists/*; \
     locale-gen en_US.UTF-8 ja_JP.UTF-8; \
     useradd -ms /bin/bash ubuntu; \
@@ -29,12 +35,30 @@ RUN set -euxo pipefail; \
 
 USER ubuntu
 
-# Create Python venv environment, and install prerequisite Python packages.
+# Install `pyenv`.
 RUN set -euxo pipefail; \
-    python3 -m venv --system-site-packages "$HOME/.local"; \
-    . "$HOME/.local/bin/activate"; \
+    curl 'https://pyenv.run' | bash
+ENV PYENV_ROOT="/home/ubuntu/.pyenv"
+ENV PATH="$PYENV_ROOT/bin${PATH:+:$PATH}"
+
+# Create a Python environment, and install prerequisite Python packages.
+RUN set -euxo pipefail; \
+    if [[ $PYTHON_VERSION == latest ]]; then \
+        PYTHON_LATEST_VERSION=$(pyenv install -l | grep -Eo '^[[:space:]]+[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+$' | grep -Eo '[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+' | LANG=C.UTF-8 sort -V | tail -n 1); \
+        PYTHON_VERSION=$PYTHON_LATEST_VERSION; \
+    fi; \
+    PYTHON_VERSION_MAJOR=$(echo $PYTHON_VERSION | grep -Eo '^[[:digit:]]+\.[[:digit:]]+'); \
+    pyenv install $PYTHON_VERSION; \
+    pyenv global $PYTHON_VERSION; \
+    pushd /home/ubuntu/.pyenv/versions/$PYTHON_VERSION/lib; \
+    ln -s libpython$PYTHON_VERSION_MAJOR.so libpython.so; \
+    popd; \
+    echo 'eval "$(pyenv init -)"' >> /home/ubuntu/.bashrc; \
+    echo 'eval "$(pyenv init -)"' >> /home/ubuntu/.profile; \
+    eval "$(pyenv init -)"; \
     python3 -m pip install -U pip; \
     python3 -m pip install -U \
+      build \
       ninja \
       packaging \
       setuptools \
@@ -42,48 +66,18 @@ RUN set -euxo pipefail; \
 
 # Install PyTorch.
 RUN set -euxo pipefail; \
-    . "$HOME/.local/bin/activate"; \
-    python3 -m pip install -U torch --index-url https://download.pytorch.org/whl/cu121
+    eval "$(pyenv init -)"; \
+    python3 -m pip install -U torch --index-url 'https://download.pytorch.org/whl/cu124'
 
 # Install Apex.
 RUN set -euxo pipefail; \
+    eval "$(pyenv init -)"; \
     pushd /workspace; \
     git clone 'https://github.com/NVIDIA/apex.git'; \
     pushd apex; \
-    . "$HOME/.local/bin/activate"; \
     python3 -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./; \
     popd; \
     rm -rf apex; \
-    popd
-
-# Install MTAdam.
-RUN set -euxo pipefail; \
-    pushd /workspace; \
-    git clone 'https://github.com/ItzikMalkiel/MTAdam.git'; \
-    pushd MTAdam; \
-    mkdir mtadam; \
-    cp mtadam.py mtadam; \
-    echo 'from .mtadam import MTAdam' > mtadam/__init__.py; \
-    echo $'[build-system]\n\
-requires = ["setuptools"]\n\
-build-backend = "setuptools.build_meta"\n\
-\n\
-[project]\n\
-name = "MTAdam"\n\
-authors = [\n\
-    {"name" = "Itzik Malkiel"},\n\
-]\n\
-description = "Automatic Balancing of Multiple Training Loss Terms"\n\
-readme = "README.txt"\n\
-requires-python = ">=3.8"\n\
-dependencies = [\n\
-    "tensorflow",\n\
-]\n\
-version = "0.0.1"\n' > pyproject.toml; \
-    . "$HOME/.local/bin/activate"; \
-    python3 -m pip install .; \
-    popd; \
-    rm -rf MTAdam; \
     popd
 
 # Clone `prerequisites`.
@@ -94,38 +88,41 @@ RUN set -euxo pipefail; \
 
 # Install the latest GCC.
 RUN set -euxo pipefail; \
-    export LIBRARY_PATH="${LIBRARY_PATH/%:/}"; \
-    /workspace/prerequisites/gcc/install --debug --prefix "$HOME/.local"
+    eval "$(pyenv init -)"; \
+    /workspace/prerequisites/gcc/install --debug --prefix /home/ubuntu/.local
 
 # Set environment variables.
-ENV C_INCLUDE_PATH "/home/ubuntu/.local/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
-ENV CPLUS_INCLUDE_PATH "/home/ubuntu/.local/include${CPLUS_INCLUDE_PATH:+:$CPLUS_INCLUDE_PATH}"
-ENV LIBRARY_PATH "/home/ubuntu/.local/lib64:/home/ubuntu/.local/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
-ENV LD_LIBRARY_PATH "/home/ubuntu/.local/lib64:/home/ubuntu/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-ENV PATH "/home/ubuntu/.local/bin${PATH:+:$PATH}"
+ENV C_INCLUDE_PATH=/home/ubuntu/.local/include
+ENV CPLUS_INCLUDE_PATH=/home/ubuntu/.local/include
+ENV LIBRARY_PATH="/home/ubuntu/.local/lib64:/home/ubuntu/.local/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/home/ubuntu/.local/lib64:/home/ubuntu/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+ENV PATH="/home/ubuntu/.local/bin${PATH:+:$PATH}"
+ENV CC=/home/ubuntu/.local/bin/gcc
+ENV CXX=/home/ubuntu/.local/bin/g++
 
 # Install CMake.
 RUN set -euxo pipefail; \
-    /workspace/prerequisites/cmake/install --debug --prefix "$HOME/.local"
+    /workspace/prerequisites/cmake/install --debug --prefix /home/ubuntu/.local
 
 # Install libbacktrace.
 RUN set -euxo pipefail; \
-    /workspace/prerequisites/libbacktrace/install --debug --prefix "$HOME/.local"
+    /workspace/prerequisites/libbacktrace/install --debug --prefix /home/ubuntu/.local
 
 # Install Boost.
 RUN set -euxo pipefail; \
-    python_version="$(python3 -V | grep -Eo '^Python [[:digit:]]+\.[[:digit:]]+' | grep -Eo '[[:digit:]]+\.[[:digit:]]+')"; \
-    echo "import toolset : using ; using python : : $(which python3) : /usr/include/python$python_version ;" > "$HOME/user-config.jam"; \
+    eval "$(pyenv init -)"; \
+    PYTHON_PREFIX="$(python3 -c 'import sys; print(sys.prefix);')"; \
+    echo "import toolset : using ; using python : : \"$PYTHON_PREFIX/bin/python3\" ;" > /home/ubuntu/user-config.jam; \
     /workspace/prerequisites/boost/download --debug --source-dir /workspace/boost; \
     if [[ $BUILD_TYPE == 'Debug' ]]; then \
-      /workspace/prerequisites/boost/build --debug --source-dir /workspace/boost --prefix "$HOME/.local" -- \
+      /workspace/prerequisites/boost/build --debug --source-dir /workspace/boost --prefix /home/ubuntu/.local -- \
         -d+2 --with-headers --with-stacktrace --with-python --with-timer --build-type=complete --layout=tagged \
         toolset=gcc variant=debug threading=multi link=shared runtime-link=shared \
         cxxflags=-D_GLIBCXX_DEBUG cxxflags=-D_GLIBCXX_DEBUG_PEDANTIC \
         cflags=-fsanitize=address cxxflags=-fsanitize=address linkflags=-fsanitize=address \
         cflags=-fsanitize=undefined cxxflags=-fsanitize=undefined linkflags=-fsanitize=undefined; \
     else \
-      /workspace/prerequisites/boost/build --debug --source-dir /workspace/boost --prefix "$HOME/.local" -- \
+      /workspace/prerequisites/boost/build --debug --source-dir /workspace/boost --prefix /home/ubuntu/.local -- \
         -d+2 --with-headers --with-stacktrace --with-python --with-timer --build-type=complete --layout=tagged \
         toolset=gcc variant=release threading=multi link=shared runtime-link=shared; \
     fi; \
@@ -138,9 +135,9 @@ RUN set -euxo pipefail; \
     pushd marisa-trie; \
     autoreconf -i; \
     if [[ $BUILD_TYPE == 'Debug' ]]; then \
-      CFLAGS='-D_DEBUG -g' CXXFLAGS='-D_DEBUG -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC -g' ./configure --prefix="$HOME/.local" --enable-native-code --disable-static; \
+      CFLAGS='-D_DEBUG -g' CXXFLAGS='-D_DEBUG -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC -g' ./configure --prefix=/home/ubuntu/.local --enable-native-code --disable-static; \
     else \
-      CFLAGS='-DNDEBUG -O3 -flto' CXXFLAGS='-DNDEBUG -O3 -flto' ./configure --prefix="$HOME/.local" --enable-native-code --disable-static; \
+      CFLAGS='-DNDEBUG -O3 -flto' CXXFLAGS='-DNDEBUG -O3 -flto' ./configure --prefix=/home/ubuntu/.local --enable-native-code --disable-static; \
     fi; \
     make -j; \
     make install; \
@@ -151,7 +148,7 @@ RUN set -euxo pipefail; \
 # Clone `shanten-number`.
 RUN set -euxo pipefail; \
     pushd /workspace; \
-    git clone 'https://github.com/tomohxx/shanten-number'; \
+    git clone 'https://github.com/tomohxx/shanten-number.git'; \
     pushd shanten-number; \
     tar xzvf data.tar.gz; \
     popd; \
@@ -161,18 +158,19 @@ COPY --chown=ubuntu . /workspace/kanachan
 
 # Install `kanachan`.
 RUN set -euxo pipefail; \
+    eval "$(pyenv init -)"; \
     pushd /workspace/kanachan/src/common; \
     protoc -I. --cpp_out=. mahjongsoul.proto; \
     popd; \
     mkdir -p /workspace/kanachan/build; \
     pushd /workspace/kanachan/build; \
     if [[ $BUILD_TYPE == 'Debug' ]]; then \
-      CC=/home/ubuntu/.local/bin/gcc CXX=/home/ubuntu/.local/bin/g++ cmake \
+      cmake \
         -DSHANTEN_NUMBER_SOURCE_PATH=/workspace/shanten-number \
         -DCMAKE_BUILD_TYPE=Debug \
         ..; \
     else \
-      CC=/home/ubuntu/.local/bin/gcc CXX=/home/ubuntu/.local/bin/g++ cmake \
+      cmake \
         -DSHANTEN_NUMBER_SOURCE_PATH=/workspace/shanten-number \
         -DCMAKE_BUILD_TYPE=Release \
         ..; \
@@ -184,7 +182,7 @@ RUN set -euxo pipefail; \
     rm -rf /workspace/shanten-number; \
     pushd /workspace/kanachan; \
     cp build/src/simulation/libsimulation.so kanachan/simulation/_simulation.so; \
-    . "$HOME/.local/bin/activate"; \
-    python3 -m pip install .; \
+    python3 -m build -w; \
+    python3 -m pip install -U dist/*.whl; \
     popd; \
     rm -rf /workspace/kanachan/build
