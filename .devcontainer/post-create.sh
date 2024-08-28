@@ -67,6 +67,7 @@ eval "$(pyenv init -)"
 # Install prerequisite Python packages.
 python3 -m pip install -U pip
 python3 -m pip install -U \
+  build \
   ninja \
   packaging \
   setuptools \
@@ -174,5 +175,6 @@ popd
 
 # Install kanachan.
 pushd /workspaces/kanachan
-python3 -m pip install .
+python3 -m build -w; \
+python3 -m pip install -U dist/*.whl; \
 popd
