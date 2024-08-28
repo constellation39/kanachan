@@ -26,7 +26,7 @@ class Dataset(IterableDataset):
         self.__rewrite_rooms = rewrite_rooms
         self.__rewrite_grades = rewrite_grades
 
-    def __iter__(self) -> Type:
+    def __iter__(self):
         _, _, local_rank = get_distributed_environment()
         return self.__iterator_class(
             path=self.__path,

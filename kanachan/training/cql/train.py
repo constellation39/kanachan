@@ -7,14 +7,14 @@ from pathlib import Path
 import os
 import logging
 import sys
-from typing import Callable
+from typing import Any, Callable
 from omegaconf import DictConfig
 import hydra
 from hydra.core.hydra_config import HydraConfig
 import torch
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.cuda.amp import GradScaler
 from torch.distributed import (
@@ -114,7 +114,7 @@ def _training(
         )
 
     is_amp_enabled = dtype != amp_dtype
-    autocast_kwargs = {
+    autocast_kwargs: dict[str, Any] = {
         "device_type": device.type,
         "dtype": amp_dtype,
         "enabled": is_amp_enabled,
@@ -824,7 +824,9 @@ def _main(config: DictConfig) -> None:
     for _param in decoder.parameters():
         _param.data.zero_()
     decoder_tdm = TensorDictModule(
-        decoder, in_keys=["candidates", "encode"], out_keys=["qr_action_value"]
+        decoder,
+        in_keys=["candidates", "encode"],
+        out_keys=["qr_action_value"],
     )
     network = TensorDictSequential(encoder_tdm, decoder_tdm)
     if world_size >= 2:
@@ -886,7 +888,9 @@ def _main(config: DictConfig) -> None:
 
     q_decoder = QDecoder()
     q_decoder_tdm = TensorDictModule(
-        q_decoder, in_keys=["qr_action_value"], out_keys=["action_value"]
+        q_decoder,
+        in_keys=["qr_action_value"],
+        out_keys=["action_value"],
     )
     argmax_layer = DecodeConverter("argmax")
     argmax_layer_tdm = TensorDictModule(
@@ -908,58 +912,6 @@ def _main(config: DictConfig) -> None:
             encoder_tdm, decoder_tdm, q_decoder_tdm, argmax_layer_tdm
         )
 
-    optimizer, scheduler = _config.optimizer.create(config, network)
-
-    if config.encoder.load_from is not None:
-        assert config.initial_model_prefix is None
-        assert config.initial_model_index is None
-        encoder_state_dict = torch.load(
-            config.encoder.load_from, map_location="cpu"
-        )
-        encoder.load_state_dict(encoder_state_dict)
-
-        if enable_target_network:
-            assert target_encoder is not None
-            target_encoder.load_state_dict(encoder_state_dict)
-
-    if config.initial_model_prefix is not None:
-        assert config.encoder.load_from is None
-        assert encoder_snapshot_path is not None
-        assert decoder_snapshot_path is not None
-        encoder_state_dict = torch.load(
-            encoder_snapshot_path, map_location="cpu"
-        )
-        encoder.load_state_dict(encoder_state_dict)
-        decoder_state_dict = torch.load(
-            decoder_snapshot_path, map_location="cpu"
-        )
-        decoder.load_state_dict(decoder_state_dict)
-
-        if enable_target_network:
-            assert target_encoder_snapshot_path is not None
-            assert target_encoder is not None
-            assert target_decoder_snapshot_path is not None
-            assert target_decoder is not None
-            assert target_network is not None
-            target_encoder_state_dict = torch.load(
-                target_encoder_snapshot_path, map_location="cpu"
-            )
-            target_encoder.load_state_dict(target_encoder_state_dict)
-            target_decoder_state_dict = torch.load(
-                target_decoder_snapshot_path, map_location="cpu"
-            )
-            target_decoder.load_state_dict(target_decoder_state_dict)
-
-        if optimizer_snapshot_path is not None:
-            optimizer.load_state_dict(
-                torch.load(optimizer_snapshot_path, map_location="cpu")
-            )
-
-        if scheduler is not None and scheduler_snapshot_path is not None:
-            scheduler.load_state_dict(
-                torch.load(scheduler_snapshot_path, map_location="cpu")
-            )
-
     network.requires_grad_(True)
     network.train()
     network = network.to(device=device, dtype=dtype)
@@ -980,6 +932,60 @@ def _main(config: DictConfig) -> None:
         network_to_save.requires_grad_(True)
         network_to_save.train()
         network_to_save = network_to_save.to(device=device, dtype=dtype)
+
+    optimizer, scheduler = _config.optimizer.create(config, network)
+
+    if config.encoder.load_from is not None:
+        assert config.initial_model_prefix is None
+        assert config.initial_model_index is None
+        encoder_state_dict = torch.load(
+            config.encoder.load_from, map_location="cpu"
+        )
+        encoder.load_state_dict(encoder_state_dict)
+
+        if enable_target_network:
+            assert target_encoder is not None
+            target_encoder.load_state_dict(encoder_state_dict)
+
+    if config.initial_model_prefix is not None:
+        assert config.encoder.load_from is None
+        if enable_target_network:
+            assert source_encoder_snapshot_path is not None
+            assert source_decoder_snapshot_path is not None
+            assert target_encoder_snapshot_path is not None
+            assert target_encoder is not None
+            assert target_decoder_snapshot_path is not None
+            assert target_decoder is not None
+            assert target_network is not None
+            source_encoder_state_dict = torch.load(
+                source_encoder_snapshot_path
+            )
+            encoder.load_state_dict(source_encoder_state_dict)
+            source_decoder_state_dict = torch.load(
+                source_decoder_snapshot_path
+            )
+            decoder.load_state_dict(source_decoder_state_dict)
+            target_encoder_state_dict = torch.load(
+                target_encoder_snapshot_path
+            )
+            target_encoder.load_state_dict(target_encoder_state_dict)
+            target_decoder_state_dict = torch.load(
+                target_decoder_snapshot_path
+            )
+            target_decoder.load_state_dict(target_decoder_state_dict)
+        else:
+            assert encoder_snapshot_path is not None
+            assert decoder_snapshot_path is not None
+            encoder_state_dict = torch.load(encoder_snapshot_path)
+            encoder.load_state_dict(encoder_state_dict)
+            decoder_state_dict = torch.load(decoder_snapshot_path)
+            decoder.load_state_dict(decoder_state_dict)
+
+        if optimizer_snapshot_path is not None:
+            optimizer.load_state_dict(torch.load(optimizer_snapshot_path))
+
+        if scheduler is not None and scheduler_snapshot_path is not None:
+            scheduler.load_state_dict(torch.load(scheduler_snapshot_path))
 
     snapshots_path = output_prefix / "snapshots"
 

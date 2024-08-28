@@ -3,7 +3,7 @@ from tqdm import tqdm
 import torch
 from torch import Tensor
 import torch.utils.data
-from tensordict import TensorDictBase, TensorDict
+from tensordict import TensorDict
 from torchrl.data import ListStorage, TensorDictReplayBuffer
 from torchrl.data.replay_buffers import SamplerWithoutReplacement
 from kanachan.constants import (
@@ -16,11 +16,10 @@ from kanachan.constants import (
 )
 from kanachan.training.common import get_distributed_environment
 from kanachan.training.core.rl import RewardFunction
-from kanachan.training.core.offline_rl.data_iterator import DataIterator
-from kanachan.training.core.dataset import Dataset
+from kanachan.training.core.offline_rl.dataset import Dataset
 
 
-_INTERNAL_BATCH_SIZE = 512
+_INTERNAL_BATCH_SIZE = 1024
 
 
 class EpisodeReplayBuffer:
@@ -65,7 +64,6 @@ class EpisodeReplayBuffer:
 
         dataset = Dataset(
             path=training_data,
-            iterator_class=DataIterator,
             num_skip_samples=num_skip_samples,
             rewrite_rooms=rewrite_rooms,
             rewrite_grades=rewrite_grades,
@@ -76,7 +74,9 @@ class EpisodeReplayBuffer:
             num_workers=num_workers,
             pin_memory=pin_memory,
         )
+        self.__data_iter = iter(self.__data_loader)
         self.__contiguous = contiguous_training_data
+        self.__annotations: TensorDict | None = None
         self.__get_reward = get_reward
         self.__dtype = dtype
         storage = ListStorage(max_size=max_size)
@@ -113,60 +113,8 @@ class EpisodeReplayBuffer:
             )
             self.__first_iteration = False
 
-        annotations: TensorDictBase = TensorDict(
-            {}, batch_size=0, device="cpu"
-        )
-        annotations.set(
-            "sparse", torch.empty(0, device="cpu", dtype=torch.int32)
-        )
-        annotations.set(
-            "numeric", torch.empty(0, device="cpu", dtype=torch.int32)
-        )
-        annotations.set(
-            "progression", torch.empty(0, device="cpu", dtype=torch.int32)
-        )
-        annotations.set(
-            "candidates", torch.empty(0, device="cpu", dtype=torch.int32)
-        )
-        annotations.set(
-            "action", torch.empty(0, device="cpu", dtype=torch.int32)
-        )
-        annotations.set(
-            ("next", "sparse"), torch.empty(0, device="cpu", dtype=torch.int32)
-        )
-        annotations.set(
-            ("next", "numeric"),
-            torch.empty(0, device="cpu", dtype=torch.int32),
-        )
-        annotations.set(
-            ("next", "progression"),
-            torch.empty(0, device="cpu", dtype=torch.int32),
-        )
-        annotations.set(
-            ("next", "candidates"),
-            torch.empty(0, device="cpu", dtype=torch.int32),
-        )
-        annotations.set(
-            ("next", "round_summary"),
-            torch.empty(0, device="cpu", dtype=torch.int32),
-        )
-        annotations.set(
-            ("next", "results"),
-            torch.empty(0, device="cpu", dtype=torch.int32),
-        )
-        annotations.set(
-            ("next", "end_of_round"),
-            torch.empty(0, device="cpu", dtype=torch.bool),
-        )
-        annotations.set(
-            ("next", "end_of_game"),
-            torch.empty(0, device="cpu", dtype=torch.bool),
-        )
-        annotations.set(
-            ("next", "done"), torch.empty(0, device="cpu", dtype=torch.bool)
-        )
-
-        for data in self.__data_loader:
+        while True:
+            data = next(self.__data_iter)
             assert isinstance(data, list)
             assert len(data) == 13
 
@@ -292,28 +240,34 @@ class EpisodeReplayBuffer:
             td.set(("next", "end_of_game"), done.detach().clone())
             td.set(("next", "done"), done)
 
-            annotations = torch.cat((annotations, td))  # type: ignore
+            if self.__annotations is None:
+                self.__annotations = td
+            else:
+                self.__annotations = torch.cat(
+                    (self.__annotations, td)
+                ).to_tensordict()
+                assert isinstance(self.__annotations, TensorDict)
 
             while True:
-                assert isinstance(annotations, TensorDictBase)
-
                 i = 0
-                while i < annotations.batch_size[0]:
-                    _done: Tensor = annotations["next", "done"][i]
+                while i < self.__annotations.batch_size[0]:
+                    _done: Tensor = self.__annotations["next", "done"][i]
                     assert isinstance(_done, Tensor)
                     if _done.item():
                         break
                     i += 1
-                if i == annotations.batch_size[0]:
+                if i == self.__annotations.batch_size[0]:
                     break
 
                 length = i + 1
                 assert torch.all(
-                    ~annotations["next", "done"][: length - 1]
+                    ~self.__annotations["next", "done"][: length - 1]
                 ).item()
-                assert annotations["next", "done"][length - 1].item()
+                assert self.__annotations["next", "done"][length - 1].item()
 
-                episode: TensorDict = annotations[:length].to_tensordict()
+                episode: TensorDict = self.__annotations[
+                    :length
+                ].to_tensordict()
                 assert isinstance(episode, TensorDict)
                 with torch.no_grad():
                     self.__get_reward(episode, self.__contiguous)
@@ -371,9 +325,13 @@ class EpisodeReplayBuffer:
                     break
 
                 assert self.__size + length <= self.__max_size
-                self.__replay_buffer.extend(episode)
+                for i in range(length):
+                    self.__replay_buffer.add(episode[i])
                 self.__size += length
-                annotations = annotations[length:]
+                self.__annotations = self.__annotations[
+                    length:
+                ].to_tensordict()
+                assert isinstance(self.__annotations, TensorDict)
 
                 if flag:
                     if progress is not None:

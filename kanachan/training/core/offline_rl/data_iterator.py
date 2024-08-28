@@ -30,13 +30,21 @@ class DataIterator:
         local_rank: int,
     ) -> None:
         if num_skip_samples < 0:
-            errmsg = f"{num_skip_samples}: An invalid value for `num_skip_samples`."
+            errmsg = (
+                f"{num_skip_samples}: An invalid value for `num_skip_samples`."
+            )
             raise ValueError(errmsg)
-        if rewrite_rooms is not None and (rewrite_rooms < 0 or 4 < rewrite_rooms):
+        if rewrite_rooms is not None and (
+            rewrite_rooms < 0 or 4 < rewrite_rooms
+        ):
             errmsg = f"{rewrite_rooms}: An invalid value for `rewrite_rooms`."
             raise ValueError(errmsg)
-        if rewrite_grades is not None and (rewrite_grades < 0 or 15 < rewrite_grades):
-            errmsg = f"{rewrite_grades}: An invalid value for `rewrite_grades`."
+        if rewrite_grades is not None and (
+            rewrite_grades < 0 or 15 < rewrite_grades
+        ):
+            errmsg = (
+                f"{rewrite_grades}: An invalid value for `rewrite_grades`."
+            )
             raise ValueError(errmsg)
 
         if path.suffix == ".gz":
@@ -58,7 +66,7 @@ class DataIterator:
                 total=num_skip_samples,
                 maxinterval=0.1,
                 disable=(local_rank != 0 or not is_primary_worker),
-                unit="lines",
+                unit=" lines",
                 smoothing=0.0,
             ) as progress:
                 for _ in range(num_skip_samples):
@@ -385,17 +393,16 @@ class DataIterator:
         )
 
     def __next__(self):
-        if get_worker_info() is None:
+        worker_info = get_worker_info()
+        if worker_info is None:
             line = next(self.__fp)
             return self.__parse_line(line)
         else:
+            assert worker_info.num_workers >= 1
             line = next(self.__fp)
             try:
-                worker_info = get_worker_info()
-                assert worker_info is not None
-                assert worker_info.num_workers >= 1
                 for _ in range(worker_info.num_workers - 1):
                     next(self.__fp)
-            except StopIteration as _:
+            except StopIteration:
                 pass
             return self.__parse_line(line)
