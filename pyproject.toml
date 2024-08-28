@@ -1,6 +1,30 @@
+[project]
+name = "kanachan"
+version = "0.1.0"
+authors = [
+  {name = "Cryolite", email = "cryolite.indigo@gmail.com"},
+]
+description = "A Japanese (Riichi) Mahjong AI Framework"
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "hydra-core",
+  "jsonschema",
+  "mahjong==1.1.11",
+  "pyyaml",
+  "tensorboard",
+  "tensordict",
+  "torchrl",
+  "tqdm",
+]
+
+[project.urls]
+Homepage = "https://github.com/Cryolite/kanachan"
+
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 79
@@ -13,3 +37,7 @@ max-doc-length = 72
 
 [tool.ruff.pydocstyle]
 convention = "google"
+
+[tool.hatch.build.targets.wheel]
+include = ["/kanachan/**/*.py"]
+artifacts = ["/kanachan/simulation/_simulation.so"]
