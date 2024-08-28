@@ -1,10 +1,12 @@
 /.git
+/.venv
+/.mypy_cache
+/build
+/dist
+/.dockerignore
 /src/common/mahjongsoul.pb.h
 /src/common/mahjongsoul.pb.cc
-/build
 /kanachan/simulation/_simulation.so
-/kanachan.egg-info
-/.dockerignore
 /prerequisites
 /annotate/Dockerfile
 /kanachan/Dockerfile
