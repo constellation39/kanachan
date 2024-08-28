@@ -13,6 +13,7 @@ dependencies = [
   "jsonschema",
   "mahjong==1.1.11",
   "pyyaml",
+  "pyzmq",
   "tensorboard",
   "tensordict",
   "torchrl",
