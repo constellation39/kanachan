@@ -18,6 +18,7 @@ dependencies = [
   "tensordict",
   "torchrl",
   "tqdm",
+  "types-tqdm",
 ]
 
 [project.urls]
