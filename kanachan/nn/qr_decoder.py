@@ -172,10 +172,16 @@ def compute_td_error(
     source_network(copy)
     data["qr_action_value"] = copy["qr_action_value"]
 
-    _copy: TensorDict = data["next"]
-    assert isinstance(_copy, TensorDict)
-    _copy = _copy.detach()
-    _copy = _copy.clone()
+    _copy = TensorDict(
+        {
+            "sparse": data["next", "sparse"].detach().clone(),
+            "numeric": data["next", "numeric"].detach().clone(),
+            "progression": data["next", "progression"].detach().clone(),
+            "candidates": data["next", "candidates"].detach().clone(),
+        },
+        batch_size=data.batch_size,
+        device=data.device,
+    )
     if target_network is None:
         source_network(_copy)
     else:
