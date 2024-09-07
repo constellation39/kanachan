@@ -704,7 +704,7 @@ def _main(config: DictConfig) -> None:
         _config.decoder.dump(config)
 
         logging.info("# of QR intervals: %d", config.num_qr_intervals)
-        logging.info("Dueling architecture: %s", config.dueling_architecture)
+        logging.info("Dueling network: %s", config.dueling_network)
 
         if config.initial_model_prefix is not None:
             logging.info(
@@ -816,8 +816,8 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         num_qr_intervals=config.num_qr_intervals,
-        dueling_architecture=config.dueling_architecture,
-        noise_init_std=0.0,
+        dueling_network=config.dueling_network,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
@@ -867,8 +867,8 @@ def _main(config: DictConfig) -> None:
             layer_normalization=config.decoder.layer_normalization,
             num_layers=config.decoder.num_layers,
             num_qr_intervals=config.num_qr_intervals,
-            dueling_architecture=config.dueling_architecture,
-            noise_init_std=0.0,
+            dueling_network=config.dueling_network,
+            noise_init_std=None,
             device=torch.device("cpu"),
             dtype=dtype,
         )
@@ -1089,8 +1089,8 @@ def _main(config: DictConfig) -> None:
                                 "layer_normalization": config.decoder.layer_normalization,
                                 "num_layers": config.decoder.num_layers,
                                 "num_qr_intervals": config.num_qr_intervals,
-                                "dueling_architecture": config.dueling_architecture,
-                                "noise_init_std": 0.0,
+                                "dueling_network": config.dueling_network,
+                                "noise_init_std": None,
                                 "device": torch.device("cpu"),
                                 "dtype": dtype,
                             },
