@@ -1,7 +1,6 @@
 from collections import OrderedDict
 import torch
 from torch import Tensor, nn
-from torchrl.modules import NoisyLinear
 from kanachan.constants import (
     MAX_NUM_ACTIVE_SPARSE_FEATURES,
     NUM_NUMERIC_FEATURES,
@@ -11,6 +10,7 @@ from kanachan.constants import (
     EOR_NUM_NUMERIC_FEATURES,
     EOR_ENCODER_WIDTH,
 )
+from kanachan.nn.noisy_linear import NoisyLinear
 
 
 class Decoder(nn.Module):
@@ -58,15 +58,26 @@ class Decoder(nn.Module):
         if self.__output_mode == "ranking":
             self.__output_width = 4
 
-        layers = OrderedDict()
+        layers: OrderedDict[str, nn.Module] = OrderedDict()
 
-        if noise_init_std == 0.0:
-            linear_layer = nn.Linear
-        else:
-            linear_layer = NoisyLinear
+        def create_linear_layer(
+            in_features, out_features, device, dtype
+        ) -> nn.Linear | NoisyLinear:
+            if noise_init_std == 0.0:
+                return nn.Linear(
+                    in_features, out_features, device=device, dtype=dtype
+                )
+            else:
+                return NoisyLinear(
+                    in_features,
+                    out_features,
+                    device=device,
+                    dtype=dtype,
+                    std_init=noise_init_std,
+                )
 
         if num_layers == 1:
-            layers["linear"] = linear_layer(
+            layers["linear"] = create_linear_layer(
                 input_dimension,
                 self.__output_width,
                 device=device,
@@ -74,7 +85,7 @@ class Decoder(nn.Module):
             )
         else:
             assert dimension is not None
-            layers["linear0"] = linear_layer(
+            layers["linear0"] = create_linear_layer(
                 input_dimension, dimension, device=device, dtype=dtype
             )
         if num_layers >= 2:
@@ -94,7 +105,7 @@ class Decoder(nn.Module):
             assert dimension is not None
             assert dropout is not None
             final_layer = i == num_layers - 1
-            layers[f"linear{i}"] = linear_layer(
+            layers[f"linear{i}"] = create_linear_layer(
                 dimension,
                 self.__output_width if final_layer else dimension,
                 device=device,
@@ -122,15 +133,18 @@ class Decoder(nn.Module):
 
         original_dtype = encode.dtype
 
+        first: int
+        last: int
+        decode: Tensor
         if self.__output_mode == "state":
-            decode: Tensor = self.layers(encode)
+            decode = self.layers(encode)
             decode = decode.squeeze(2)
             decode = decode.sum(1)
             assert decode.dim() == 1
             assert decode.size(0) == batch_size
         elif self.__output_mode == "scores":
-            first: int = -1
-            last: int = -1
+            first = -1
+            last = -1
             if input_width == ENCODER_WIDTH:
                 first = MAX_NUM_ACTIVE_SPARSE_FEATURES + 2
                 last = MAX_NUM_ACTIVE_SPARSE_FEATURES + NUM_NUMERIC_FEATURES
@@ -141,14 +155,14 @@ class Decoder(nn.Module):
                 raise NotImplementedError()
             assert last - first == 4
             scores_encode = encode[:, first:last]
-            decode: Tensor = self.layers(scores_encode)
+            decode = self.layers(scores_encode)
             decode = decode.squeeze(2)
             assert decode.dim() == 2
             assert decode.size(0) == batch_size
             assert decode.size(1) == 4
         elif self.__output_mode == "ranking":
-            first: int = -1
-            last: int = -1
+            first = -1
+            last = -1
             if input_width == ENCODER_WIDTH:
                 first = MAX_NUM_ACTIVE_SPARSE_FEATURES + 2
                 last = MAX_NUM_ACTIVE_SPARSE_FEATURES + NUM_NUMERIC_FEATURES
@@ -159,7 +173,7 @@ class Decoder(nn.Module):
                 raise NotImplementedError()
             assert last - first == 4
             scores_encode = encode[:, first:last]
-            decode: Tensor = self.layers(scores_encode)
+            decode = self.layers(scores_encode)
             assert decode.dim() == 3
             assert decode.size(0) == batch_size
             assert decode.size(1) == 4
@@ -169,7 +183,7 @@ class Decoder(nn.Module):
                 msg = "An invalid output mode."
                 raise RuntimeError(msg)
             candidates_encode = encode[:, -MAX_NUM_ACTION_CANDIDATES:]
-            decode: Tensor = self.layers(candidates_encode)
+            decode = self.layers(candidates_encode)
             decode = decode.squeeze(2)
             assert decode.dim() == 2
             assert decode.size(0) == batch_size

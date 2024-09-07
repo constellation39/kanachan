@@ -1,3 +1,4 @@
+from .noisy_linear import NoisyLinear
 from .positional_encoding import PositionalEncoding
 from .position_embedding import PositionEmbedding
 from .encoder import Encoder
