@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Any
 import torch
 from torch import Tensor, nn
 from tensordict import TensorDictBase, TensorDict
@@ -18,6 +18,7 @@ import kanachan.simulation
 from kanachan.training.core.rl import RewardFunction
 
 
+_RoundKey = tuple[int, int, int]
 Progress = Callable[[], None]
 
 
@@ -61,7 +62,7 @@ def simulate(
     _episodes: list[TensorDict] = []
     for game_log in game_logs:
         game_result = game_log.get_result()
-        round_results = {}
+        round_results: dict[_RoundKey, dict[str, Any]] = {}
         for i in range(4):
             _round_results = game_result[i]["round_results"]
             for round_result in _round_results:
@@ -182,7 +183,7 @@ def simulate(
             benchang = int(numeric[t, 0].item())
             round_key = (chang, ju, benchang)
 
-            next_round_key = (None, None, None)
+            next_round_key: _RoundKey | None = None
             if t + 1 < length:
                 next_chang = int(sparse[t + 1, 7].item()) - 75
                 next_ju = int(sparse[t + 1, 8].item()) - 78
