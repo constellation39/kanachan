@@ -21,8 +21,8 @@ class QRDecoder(nn.Module):
         layer_normalization: bool,
         num_layers: int,
         num_qr_intervals: int,
-        dueling_architecture: bool,
-        noise_init_std: float,
+        dueling_network: bool,
+        noise_init_std: float | None,
         device: torch.device,
         dtype: torch.dtype,
     ) -> None:
@@ -45,7 +45,7 @@ class QRDecoder(nn.Module):
                 raise ValueError(dropout)
         if num_qr_intervals <= 0:
             raise ValueError(num_qr_intervals)
-        if noise_init_std < 0.0:
+        if noise_init_std is not None and noise_init_std < 0.0:
             raise ValueError(noise_init_std)
 
         super().__init__()
@@ -53,7 +53,7 @@ class QRDecoder(nn.Module):
         self.state_value_decoder_list = nn.ModuleList()
         self.advantage_decoder_list = nn.ModuleList()
         for _ in range(num_qr_intervals):
-            if dueling_architecture:
+            if dueling_network:
                 state_value_decoder = Decoder(
                     input_dimension=input_dimension,
                     dimension=dimension,

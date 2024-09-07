@@ -12,7 +12,7 @@ from hydra.core.hydra_config import HydraConfig
 import torch
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.cuda.amp import GradScaler
 from torch.distributed import (
@@ -529,7 +529,7 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="candidates",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
@@ -680,7 +680,7 @@ def _main(config: DictConfig) -> None:
                                 "layer_normalization": config.decoder.layer_normalization,
                                 "num_layers": config.decoder.num_layers,
                                 "output_mode": "candidates",
-                                "noise_init_std": 0.0,
+                                "noise_init_std": None,
                                 "device": torch.device("cpu"),
                                 "dtype": dtype,
                             },

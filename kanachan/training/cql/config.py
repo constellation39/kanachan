@@ -24,7 +24,7 @@ class Config:
     num_workers: int | None = None
     replay_buffer_size: int = 0
     num_qr_intervals: int = 200
-    dueling_architecture: bool = True
+    dueling_network: bool = True
     initial_model_prefix: Path | None = None
     initial_model_index: int | None = None
     reward_plugin: Path = MISSING

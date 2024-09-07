@@ -24,7 +24,7 @@ class Decoder(nn.Module):
         layer_normalization: bool,
         num_layers: int,
         output_mode: str,
-        noise_init_std: float,
+        noise_init_std: float | None,
         device: torch.device,
         dtype: torch.dtype,
     ) -> None:
@@ -47,7 +47,7 @@ class Decoder(nn.Module):
                 raise ValueError(dropout)
         if output_mode not in ("state", "scores", "candidates", "ranking"):
             raise ValueError(output_mode)
-        if noise_init_std < 0.0:
+        if noise_init_std is not None and noise_init_std < 0.0:
             raise ValueError(noise_init_std)
 
         super().__init__()
@@ -63,7 +63,7 @@ class Decoder(nn.Module):
         def create_linear_layer(
             in_features, out_features, device, dtype
         ) -> nn.Linear | NoisyLinear:
-            if noise_init_std == 0.0:
+            if noise_init_std is None:
                 return nn.Linear(
                     in_features, out_features, device=device, dtype=dtype
                 )
