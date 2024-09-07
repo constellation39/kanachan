@@ -91,7 +91,7 @@ def load_model(
         errmsg = f"{model_path}: Not a file."
         raise RuntimeError(errmsg)
 
-    state = torch.load(model_path, map_location=map_location)
+    state = torch.load(model_path, map_location=map_location, weights_only=True)
     if not isinstance(state, dict):
         errmsg = f"{model_path}: Not a Kanachan's model file."
         raise RuntimeError(errmsg)
