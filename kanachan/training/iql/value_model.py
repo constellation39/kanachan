@@ -3,7 +3,7 @@
 from collections import OrderedDict
 import torch
 from torch import nn
-from kanachan.constants import NUM_TYPES_OF_ACTIONS, MAX_NUM_ACTION_CANDIDATES, ENCODER_WIDTH
+from kanachan.constants import NUM_TYPES_OF_ACTIONS, MAX_NUM_ACTION_CANDIDATES
 from kanachan.nn import Encoder
 
 
@@ -16,7 +16,7 @@ class ValueDecoder(nn.Module):
 
         super(ValueDecoder, self).__init__()
 
-        layers = OrderedDict()
+        layers: OrderedDict[str, nn.Module] = OrderedDict()
         for i in range(num_layers - 1):
             layers[f'layer{i}'] = nn.Linear(
                 dimension if i == 0 else dim_feedforward, dim_feedforward,
