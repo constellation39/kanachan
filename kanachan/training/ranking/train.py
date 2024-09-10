@@ -5,16 +5,16 @@ import datetime
 import os
 import logging
 import sys
-from typing import Optional, Callable
+from typing import Optional, Callable, Any
 from omegaconf import DictConfig
 import hydra
 from hydra.core.hydra_config import HydraConfig
 import torch
 from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
-from torch.cuda.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 from torch.distributed import (
     init_process_group,
     broadcast,
@@ -80,12 +80,12 @@ def _train(
     )
 
     is_amp_enabled = dtype != amp_dtype
-    autocast_kwargs = {
+    autocast_kwargs: dict[str, Any] = {
         "device_type": device.type,
         "dtype": amp_dtype,
         "enabled": is_amp_enabled,
     }
-    grad_scaler = GradScaler(enabled=is_amp_enabled)
+    grad_scaler = GradScaler("cuda", enabled=is_amp_enabled)
 
     last_snapshot: int | None = None
     if snapshot_interval > 0:
@@ -574,12 +574,13 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="ranking",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in decoder.parameters():
-        _param.zero_()
+    with torch.no_grad():
+        for _param in decoder.parameters():
+            _param.zero_()
     decoder_tdm = TensorDictModule(
         decoder, in_keys=["encode"], out_keys=["decode"]
     )
@@ -605,7 +606,7 @@ def _main(config: DictConfig) -> None:
         assert config.initial_model_index is None
 
         encoder_state_dict = torch.load(
-            config.encoder.load_from, map_location="cpu"
+            config.encoder.load_from, map_location="cpu", weights_only=True
         )
         encoder.load_state_dict(encoder_state_dict)
 
@@ -615,24 +616,32 @@ def _main(config: DictConfig) -> None:
         assert decoder_snapshot_path is not None
 
         encoder_state_dict = torch.load(
-            encoder_snapshot_path, map_location="cpu"
+            encoder_snapshot_path, map_location="cpu", weights_only=True
         )
         encoder.load_state_dict(encoder_state_dict)
 
         decoder_state_dict = torch.load(
-            decoder_snapshot_path, map_location="cpu"
+            decoder_snapshot_path, map_location="cpu", weights_only=True
         )
         decoder.load_state_dict(decoder_state_dict)
 
         if optimizer_snapshot_path is not None:
             optimizer.load_state_dict(
-                torch.load(optimizer_snapshot_path, map_location="cpu")
+                torch.load(
+                    optimizer_snapshot_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
             )
 
         if scheduler_snapshot_path is not None:
             assert scheduler is not None
             scheduler.load_state_dict(
-                torch.load(scheduler_snapshot_path, map_location="cpu")
+                torch.load(
+                    scheduler_snapshot_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
             )
 
     network_tdm.requires_grad_(True)
@@ -717,7 +726,7 @@ def _main(config: DictConfig) -> None:
                                 "layer_normalization": config.decoder.layer_normalization,
                                 "num_layers": config.decoder.num_layers,
                                 "output_mode": "ranking",
-                                "noise_init_std": 0.0,
+                                "noise_init_std": None,
                                 "device": torch.device("cpu"),
                                 "dtype": dtype,
                             },
