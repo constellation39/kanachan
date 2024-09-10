@@ -14,7 +14,7 @@ from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
-from torch.cuda.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 from torch.distributed import (
     init_process_group,
     broadcast,
@@ -86,7 +86,7 @@ def _training(
         "dtype": amp_dtype,
         "enabled": is_amp_enabled,
     }
-    grad_scaler = GradScaler(enabled=is_amp_enabled)
+    grad_scaler = GradScaler("cuda", enabled=is_amp_enabled)
 
     last_snapshot = None
     if snapshot_interval > 0:
@@ -533,8 +533,9 @@ def _main(config: DictConfig) -> None:
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in decoder.parameters():
-        _param.zero_()
+    with torch.no_grad():
+        for _param in decoder.parameters():
+            _param.zero_()
     decoder_tdm = TensorDictModule(
         decoder, in_keys=["encode"], out_keys=["decode"]
     )
@@ -568,7 +569,7 @@ def _main(config: DictConfig) -> None:
         assert config.initial_model_index is None
 
         encoder_state_dict = torch.load(
-            config.encoder.load_from, map_location="cpu"
+            config.encoder.load_from, map_location="cpu", weights_only=True
         )
         encoder.load_state_dict(encoder_state_dict)
 
@@ -577,26 +578,28 @@ def _main(config: DictConfig) -> None:
 
         assert encoder_snapshot_path is not None
         encoder_state_dict = torch.load(
-            encoder_snapshot_path, map_location="cpu"
+            encoder_snapshot_path, map_location="cpu", weights_only=True
         )
         encoder.load_state_dict(encoder_state_dict)
 
         assert decoder_snapshot_path is not None
         decoder_state_dict = torch.load(
-            decoder_snapshot_path, map_location="cpu"
+            decoder_snapshot_path, map_location="cpu", weights_only=True
         )
         decoder.load_state_dict(decoder_state_dict)
 
         if optimizer_snapshot_path is not None:
-            optimizer.load_state_dict(
-                torch.load(optimizer_snapshot_path, map_location="cpu")
+            optimizer_state_dict = torch.load(
+                optimizer_snapshot_path, map_location="cpu", weights_only=True
             )
+            optimizer.load_state_dict(optimizer_state_dict)
 
         if scheduler_snapshot_path is not None:
             assert scheduler is not None
-            scheduler.load_state_dict(
-                torch.load(scheduler_snapshot_path, map_location="cpu")
+            scheduler_state_dict = torch.load(
+                scheduler_snapshot_path, map_location="cpu", weights_only=True
             )
+            scheduler.load_state_dict(scheduler_state_dict)
 
     network_tdm.requires_grad_(True)
     network_tdm.train()
@@ -609,6 +612,12 @@ def _main(config: DictConfig) -> None:
     network_tdm_to_save.requires_grad_(True)
     network_tdm_to_save.train()
     network_tdm_to_save = network_tdm_to_save.to(device=device, dtype=dtype)
+
+    for _optimizer_state in optimizer.state.values():
+        assert isinstance(_optimizer_state, dict)
+        for key, value in _optimizer_state.items():
+            if isinstance(value, Tensor):
+                _optimizer_state[key] = value.to(device=device, dtype=dtype)
 
     snapshots_path = output_prefix / "snapshots"
 
