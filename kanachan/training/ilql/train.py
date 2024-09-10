@@ -7,7 +7,7 @@ from pathlib import Path
 import os
 import logging
 import sys
-from typing import Callable
+from typing import Callable, Any
 from omegaconf import DictConfig
 import hydra
 from hydra.core.hydra_config import HydraConfig
@@ -15,9 +15,9 @@ import torch
 from torch import Tensor
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim import Optimizer
+from torch.optim.optimizer import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
-from torch.cuda.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 from torch.distributed import (
     init_process_group,
     broadcast,
@@ -274,12 +274,12 @@ def _train(
         last_snapshot = num_samples
 
     is_amp_enabled = device != "cpu" and dtype != amp_dtype
-    autocast_kwargs = {
+    autocast_kwargs: dict[str, Any] = {
         "device_type": device.type,
         "dtype": amp_dtype,
         "enabled": is_amp_enabled,
     }
-    grad_scaler = GradScaler(enabled=is_amp_enabled)
+    grad_scaler = GradScaler("cuda", enabled=is_amp_enabled)
 
     num_consumed_samples = 0
     batch_count = 0
@@ -1103,12 +1103,13 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="candidates",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in source1_q_decoder.parameters():
-        _param.data.zero_()
+    with torch.no_grad():
+        for _param in source1_q_decoder.parameters():
+            _param.zero_()
     source1_q_decoder_tdm = TensorDictModule(
         source1_q_decoder,
         in_keys=["encode"],
@@ -1122,12 +1123,13 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="state",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in source1_v_decoder.parameters():
-        _param.data.zero_()
+    with torch.no_grad():
+        for _param in source1_v_decoder.parameters():
+            _param.zero_()
     source1_v_decoder_tdm = TensorDictModule(
         source1_v_decoder,
         in_keys=["encode"],
@@ -1170,12 +1172,13 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="candidates",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in source2_q_decoder.parameters():
-        _param.data.zero_()
+    with torch.no_grad():
+        for _param in source2_q_decoder.parameters():
+            _param.zero_()
     source2_q_decoder_tdm = TensorDictModule(
         source2_q_decoder,
         in_keys=["encode"],
@@ -1189,12 +1192,13 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="state",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in source2_v_decoder.parameters():
-        _param.data.zero_()
+    with torch.no_grad():
+        for _param in source2_v_decoder.parameters():
+            _param.zero_()
     source2_v_decoder_tdm = TensorDictModule(
         source2_v_decoder,
         in_keys=["encode"],
@@ -1237,7 +1241,7 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="candidates",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
@@ -1254,7 +1258,7 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="state",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
@@ -1300,7 +1304,7 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="candidates",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
@@ -1317,7 +1321,7 @@ def _main(config: DictConfig) -> None:
         layer_normalization=config.decoder.layer_normalization,
         num_layers=config.decoder.num_layers,
         output_mode="state",
-        noise_init_std=0.0,
+        noise_init_std=None,
         device=torch.device("cpu"),
         dtype=dtype,
     )
@@ -1607,7 +1611,7 @@ def _main(config: DictConfig) -> None:
                                                 "layer_normalization": config.decoder.layer_normalization,
                                                 "num_layers": config.decoder.num_layers,
                                                 "output_mode": "candidates",
-                                                "noise_init_std": 0.0,
+                                                "noise_init_std": None,
                                                 "device": torch.device("cpu"),
                                                 "dtype": dtype,
                                             },
@@ -1632,7 +1636,7 @@ def _main(config: DictConfig) -> None:
                                                 "layer_normalization": config.decoder.layer_normalization,
                                                 "num_layers": config.decoder.num_layers,
                                                 "output_mode": "state",
-                                                "noise_init_std": 0.0,
+                                                "noise_init_std": None,
                                                 "device": torch.device("cpu"),
                                                 "dtype": dtype,
                                             },
@@ -1694,7 +1698,7 @@ def _main(config: DictConfig) -> None:
                                                 "layer_normalization": config.decoder.layer_normalization,
                                                 "num_layers": config.decoder.num_layers,
                                                 "output_mode": "candidates",
-                                                "noise_init_std": 0.0,
+                                                "noise_init_std": None,
                                                 "device": torch.device("cpu"),
                                                 "dtype": dtype,
                                             },
@@ -1719,7 +1723,7 @@ def _main(config: DictConfig) -> None:
                                                 "layer_normalization": config.decoder.layer_normalization,
                                                 "num_layers": config.decoder.num_layers,
                                                 "output_mode": "state",
-                                                "noise_init_std": 0.0,
+                                                "noise_init_std": None,
                                                 "device": torch.device("cpu"),
                                                 "dtype": dtype,
                                             },

@@ -4,4 +4,4 @@ WORKDIR /workspace/data
 
 #ENV CUDA_LAUNCH_BLOCKING=1
 
-ENTRYPOINT ["torchrun", "--nproc_per_node", "gpu", "--standalone", "-m", "kanachan.training.ilql.train"]
+ENTRYPOINT ["bash", "/workspace/kanachan/kanachan/training/ilql/train.sh"]
