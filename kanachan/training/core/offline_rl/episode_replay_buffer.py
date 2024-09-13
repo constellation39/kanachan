@@ -1,16 +1,21 @@
 from pathlib import Path
+from typing import Any
 from tqdm import tqdm
 import torch
 from torch import Tensor
 import torch.utils.data
-from tensordict import TensorDict
+from tensordict import TensorDictBase, TensorDict
 from torchrl.data import ListStorage, TensorDictReplayBuffer
 from torchrl.data.replay_buffers import SamplerWithoutReplacement
 from kanachan.constants import (
+    NUM_TYPES_OF_SPARSE_FEATURES,
     MAX_NUM_ACTIVE_SPARSE_FEATURES,
     NUM_NUMERIC_FEATURES,
+    NUM_TYPES_OF_PROGRESSION_FEATURES,
     MAX_LENGTH_OF_PROGRESSION_FEATURES,
+    NUM_TYPES_OF_ACTIONS,
     MAX_NUM_ACTION_CANDIDATES,
+    NUM_TYPES_OF_ROUND_SUMMARY,
     MAX_NUM_ROUND_SUMMARY,
     NUM_RESULTS,
 )
@@ -125,6 +130,8 @@ class EpisodeReplayBuffer:
             assert sparse.dim() == 2
             _internal_batch_size = sparse.size(0)
             assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+            assert torch.all(sparse >= 0).item()
+            assert torch.all(sparse <= NUM_TYPES_OF_SPARSE_FEATURES).item()
 
             numeric: Tensor = data[1]
             assert isinstance(numeric, Tensor)
@@ -141,6 +148,10 @@ class EpisodeReplayBuffer:
             assert progression.dim() == 2
             assert progression.size(0) == _internal_batch_size
             assert progression.size(1) == MAX_LENGTH_OF_PROGRESSION_FEATURES
+            assert torch.all(progression >= 0).item()
+            assert torch.all(
+                progression <= NUM_TYPES_OF_PROGRESSION_FEATURES
+            ).item()
 
             candidates: Tensor = data[3]
             assert isinstance(candidates, Tensor)
@@ -149,12 +160,16 @@ class EpisodeReplayBuffer:
             assert candidates.dim() == 2
             assert candidates.size(0) == _internal_batch_size
             assert candidates.size(1) == MAX_NUM_ACTION_CANDIDATES
+            assert torch.all(candidates >= 0).item()
+            assert torch.all(candidates <= NUM_TYPES_OF_ACTIONS).item()
 
             action: Tensor = data[4]
             assert isinstance(action, Tensor)
             assert action.dtype == torch.int32
             assert action.dim() == 1
             assert action.size(0) == _internal_batch_size
+            assert torch.all(action >= 0).item()
+            assert torch.all(action < MAX_NUM_ACTION_CANDIDATES).item()
 
             next_sparse: Tensor = data[5]
             assert isinstance(next_sparse, Tensor)
@@ -163,6 +178,10 @@ class EpisodeReplayBuffer:
             assert next_sparse.dim() == 2
             assert next_sparse.size(0) == _internal_batch_size
             assert next_sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+            assert torch.all(next_sparse >= 0).item()
+            assert torch.all(
+                next_sparse <= NUM_TYPES_OF_SPARSE_FEATURES
+            ).item()
 
             next_numeric: Tensor = data[6]
             assert isinstance(next_numeric, Tensor)
@@ -181,6 +200,10 @@ class EpisodeReplayBuffer:
             assert (
                 next_progression.size(1) == MAX_LENGTH_OF_PROGRESSION_FEATURES
             )
+            assert torch.all(next_progression >= 0).item()
+            assert torch.all(
+                next_progression <= NUM_TYPES_OF_PROGRESSION_FEATURES
+            ).item()
 
             next_candidates: Tensor = data[8]
             assert isinstance(next_candidates, Tensor)
@@ -189,6 +212,8 @@ class EpisodeReplayBuffer:
             assert next_candidates.dim() == 2
             assert next_candidates.size(0) == _internal_batch_size
             assert next_candidates.size(1) == MAX_NUM_ACTION_CANDIDATES
+            assert torch.all(next_candidates >= 0).item()
+            assert torch.all(next_candidates <= NUM_TYPES_OF_ACTIONS).item()
 
             round_summary: Tensor = data[9]
             assert isinstance(round_summary, Tensor)
@@ -197,6 +222,10 @@ class EpisodeReplayBuffer:
             assert round_summary.dim() == 2
             assert round_summary.size(0) == _internal_batch_size
             assert round_summary.size(1) == MAX_NUM_ROUND_SUMMARY
+            assert torch.all(round_summary >= 0).item()
+            assert torch.all(
+                round_summary <= NUM_TYPES_OF_ROUND_SUMMARY
+            ).item()
 
             results: Tensor = data[10]
             assert isinstance(results, Tensor)
@@ -220,32 +249,36 @@ class EpisodeReplayBuffer:
             assert done.dim() == 1
             assert done.size(0) == _internal_batch_size
 
+            _source: dict[str, Any] = {
+                "sparse": sparse,
+                "numeric": numeric,
+                "progression": progression,
+                "candidates": candidates,
+                "action": action,
+                "next": {
+                    "sparse": next_sparse,
+                    "numeric": next_numeric,
+                    "progression": next_progression,
+                    "candidates": next_candidates,
+                    "round_summary": round_summary,
+                    "results": results,
+                    "end_of_round": end_of_round,
+                    "end_of_game": done.detach().clone(),
+                    "done": done,
+                },
+            }
             td = TensorDict(
-                {},
+                _source,
                 batch_size=_internal_batch_size,
                 device=torch.device("cpu"),
             )
-            td.set("sparse", sparse)
-            td.set("numeric", numeric)
-            td.set("progression", progression)
-            td.set("candidates", candidates)
-            td.set("action", action)
-            td.set(("next", "sparse"), next_sparse)
-            td.set(("next", "numeric"), next_numeric)
-            td.set(("next", "progression"), next_progression)
-            td.set(("next", "candidates"), next_candidates)
-            td.set(("next", "round_summary"), round_summary)
-            td.set(("next", "results"), results)
-            td.set(("next", "end_of_round"), end_of_round)
-            td.set(("next", "end_of_game"), done.detach().clone())
-            td.set(("next", "done"), done)
 
             if self.__annotations is None:
                 self.__annotations = td
             else:
-                self.__annotations = torch.cat(
-                    (self.__annotations, td)
-                ).to_tensordict()
+                self.__annotations = torch.cat(  # type: ignore
+                    (self.__annotations, td)  # type: ignore
+                ).to_tensordict()  # type: ignore
                 assert isinstance(self.__annotations, TensorDict)
 
             while True:
@@ -267,11 +300,11 @@ class EpisodeReplayBuffer:
 
                 episode: TensorDict = self.__annotations[
                     :length
-                ].to_tensordict()
+                ].to_tensordict()  # type: ignore
                 assert isinstance(episode, TensorDict)
                 with torch.no_grad():
                     self.__get_reward(episode, self.__contiguous)
-                if episode.get(("next", "reward"), None) is None:
+                if episode.get(("next", "reward"), None) is None:  # type: ignore
                     errmsg = (
                         "`get_reward` did not set the "
                         '`("next", "reward")` tensor.'
@@ -297,7 +330,9 @@ class EpisodeReplayBuffer:
                 ):
                     errmsg = "An invalid `dtype` of the `reward` tensor."
                     raise RuntimeError(errmsg)
-                episode["next", "reward"] = reward.to(self.__dtype)
+                episode["next", "reward"] = (
+                    reward.to(self.__dtype).detach().clone()
+                )
 
                 if progress is not None:
                     if self.__size + length <= self.__max_size:
@@ -312,13 +347,15 @@ class EpisodeReplayBuffer:
                         batch: TensorDict = (
                             self.__replay_buffer.sample().to_tensordict()
                         )
+                        assert isinstance(batch, TensorDict)
                         assert batch.size(0) == self.__batch_size * world_size
                         self.__size -= self.__batch_size * world_size
                         if world_size >= 2:
                             batch = batch[
                                 self.__batch_size * rank : self.__batch_size
                                 * (rank + 1)
-                            ]
+                            ].to_tensordict()  # type: ignore
+                            assert isinstance(batch, TensorDict)
                         self.__batch_queue.append(batch)
                         flag = True
                         continue
@@ -326,11 +363,12 @@ class EpisodeReplayBuffer:
 
                 assert self.__size + length <= self.__max_size
                 for i in range(length):
-                    self.__replay_buffer.add(episode[i])
+                    _td: TensorDictBase = episode[i]  # type: ignore
+                    self.__replay_buffer.add(_td)
                 self.__size += length
                 self.__annotations = self.__annotations[
                     length:
-                ].to_tensordict()
+                ].to_tensordict()  # type: ignore
                 assert isinstance(self.__annotations, TensorDict)
 
                 if flag:
