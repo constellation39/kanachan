@@ -16,7 +16,7 @@ from torch import Tensor, nn
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim.optimizer import Optimizer
 import torch.optim.lr_scheduler as lr_scheduler
-from torch.cuda.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 from torch.distributed import (
     init_process_group,
     broadcast,
@@ -24,6 +24,7 @@ from torch.distributed import (
     all_reduce,
 )
 from torch.utils.tensorboard.writer import SummaryWriter
+from tensordict import TensorDict
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from kanachan.constants import MAX_NUM_ACTION_CANDIDATES
 from kanachan.training.common import (
@@ -119,7 +120,7 @@ def _training(
         "dtype": amp_dtype,
         "enabled": is_amp_enabled,
     }
-    grad_scaler = GradScaler(enabled=is_amp_enabled)
+    grad_scaler = GradScaler("cuda", enabled=is_amp_enabled)
 
     last_snapshot: int | None = None
     if snapshot_interval > 0:
@@ -129,6 +130,7 @@ def _training(
 
     for data in data_loader:
         data = data.to(device=device)
+        assert isinstance(data, TensorDict)
 
         with torch.autocast(**autocast_kwargs):
             compute_td_error(
@@ -205,7 +207,8 @@ def _training(
         batch_count += 1
 
         if batch_count % gradient_accumulation_steps == 0:
-            is_grad_nan = is_gradient_nan(source_network)
+            with torch.no_grad():
+                is_grad_nan = is_gradient_nan(source_network)
             if world_size >= 2:
                 all_reduce(is_grad_nan)
             if is_grad_nan.item() >= 1:
@@ -217,7 +220,8 @@ def _training(
                 continue
 
             grad_scaler.unscale_(optimizer)
-            gradient = get_gradient(source_network)
+            with torch.no_grad():
+                gradient = get_gradient(source_network)
             # pylint: disable=not-callable
             gradient_norm = float(torch.linalg.vector_norm(gradient).item())
             nn.utils.clip_grad_norm_(
@@ -247,7 +251,7 @@ def _training(
                     ):
                         _target_param.data *= 1.0 - target_update_rate
                         _target_param.data += (
-                            target_update_rate * _param.data.detach()
+                            target_update_rate * _param.data.detach().clone()
                         )
 
             if local_rank == 0:
@@ -821,8 +825,9 @@ def _main(config: DictConfig) -> None:
         device=torch.device("cpu"),
         dtype=dtype,
     )
-    for _param in decoder.parameters():
-        _param.data.zero_()
+    with torch.no_grad():
+        for _param in decoder.parameters():
+            _param.zero_()
     decoder_tdm = TensorDictModule(
         decoder,
         in_keys=["candidates", "encode"],
@@ -939,7 +944,7 @@ def _main(config: DictConfig) -> None:
         assert config.initial_model_prefix is None
         assert config.initial_model_index is None
         encoder_state_dict = torch.load(
-            config.encoder.load_from, map_location="cpu"
+            config.encoder.load_from, map_location="cpu", weights_only=True
         )
         encoder.load_state_dict(encoder_state_dict)
 
@@ -958,34 +963,52 @@ def _main(config: DictConfig) -> None:
             assert target_decoder is not None
             assert target_network is not None
             source_encoder_state_dict = torch.load(
-                source_encoder_snapshot_path
+                source_encoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
             )
             encoder.load_state_dict(source_encoder_state_dict)
             source_decoder_state_dict = torch.load(
-                source_decoder_snapshot_path
+                source_decoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
             )
             decoder.load_state_dict(source_decoder_state_dict)
             target_encoder_state_dict = torch.load(
-                target_encoder_snapshot_path
+                target_encoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
             )
             target_encoder.load_state_dict(target_encoder_state_dict)
             target_decoder_state_dict = torch.load(
-                target_decoder_snapshot_path
+                target_decoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
             )
             target_decoder.load_state_dict(target_decoder_state_dict)
         else:
             assert encoder_snapshot_path is not None
             assert decoder_snapshot_path is not None
-            encoder_state_dict = torch.load(encoder_snapshot_path)
+            encoder_state_dict = torch.load(
+                encoder_snapshot_path, map_location="cpu", weights_only=True
+            )
             encoder.load_state_dict(encoder_state_dict)
-            decoder_state_dict = torch.load(decoder_snapshot_path)
+            decoder_state_dict = torch.load(
+                decoder_snapshot_path, map_location="cpu", weights_only=True
+            )
             decoder.load_state_dict(decoder_state_dict)
 
         if optimizer_snapshot_path is not None:
-            optimizer.load_state_dict(torch.load(optimizer_snapshot_path))
+            optimizer_state_dict = torch.load(
+                optimizer_snapshot_path, map_location="cpu", weights_only=True
+            )
+            optimizer.load_state_dict(optimizer_state_dict)
 
         if scheduler is not None and scheduler_snapshot_path is not None:
-            scheduler.load_state_dict(torch.load(scheduler_snapshot_path))
+            schedular_state_dict = torch.load(
+                scheduler_snapshot_path, map_location="cpu", weights_only=True
+            )
+            scheduler.load_state_dict(schedular_state_dict)
 
     snapshots_path = output_prefix / "snapshots"
 
