@@ -106,6 +106,8 @@ def simulate(
         assert sparse.dim() == 2
         assert sparse.size(0) == length
         assert sparse.size(1) == MAX_NUM_ACTIVE_SPARSE_FEATURES
+        assert torch.all(sparse >= 0).item()
+        assert torch.all(sparse <= NUM_TYPES_OF_SPARSE_FEATURES).item()
         numeric = episode["numeric"]
         assert isinstance(numeric, Tensor)
         assert numeric.device == torch.device("cpu")
@@ -120,6 +122,8 @@ def simulate(
         assert progression.dim() == 2
         assert progression.size(0) == length
         assert progression.size(1) == MAX_LENGTH_OF_PROGRESSION_FEATURES
+        assert torch.all(progression >= 0).item()
+        assert torch.all(progression <= NUM_TYPES_OF_PROGRESSION_FEATURES).item()
         candidates = episode["candidates"]
         assert isinstance(candidates, Tensor)
         assert candidates.device == torch.device("cpu")
@@ -127,12 +131,16 @@ def simulate(
         assert candidates.dim() == 2
         assert candidates.size(0) == length
         assert candidates.size(1) == MAX_NUM_ACTION_CANDIDATES
+        assert torch.all(candidates >= 0).item()
+        assert torch.all(candidates <= NUM_TYPES_OF_ACTIONS).item()
         action_index = episode["action"]
         assert isinstance(action_index, Tensor)
         assert action_index.device == torch.device("cpu")
         assert action_index.dtype == torch.int32
         assert action_index.dim() == 1
         assert action_index.size(0) == length
+        assert torch.all(action_index >= 0).item()
+        assert torch.all(action_index < MAX_NUM_ACTION_CANDIDATES).item()
         log_prob = episode.get("sample_log_prob", None)
         if log_prob is not None:
             assert log_prob.device == torch.device("cpu")
