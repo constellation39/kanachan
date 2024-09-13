@@ -93,8 +93,8 @@ class QRDecoder(nn.Module):
         mask = candidates >= NUM_TYPES_OF_ACTIONS
 
         num_qr_intervals = len(self.advantage_decoder_list)
-        dueling_architecture = len(self.state_value_decoder_list) != 0
-        assert dueling_architecture == (
+        dueling_network = len(self.state_value_decoder_list) != 0
+        assert dueling_network == (
             len(self.state_value_decoder_list) == num_qr_intervals
         )
         qs: list[Tensor] = []
@@ -105,14 +105,14 @@ class QRDecoder(nn.Module):
             assert advantage.size(0) == batch_size
             assert advantage.size(1) == MAX_NUM_ACTION_CANDIDATES
 
-            if dueling_architecture:
+            if dueling_network:
                 advantage = advantage.masked_fill(mask, 0.0)
                 advantage = advantage - advantage.mean(1, keepdim=True)
                 state_value_decoder = self.state_value_decoder_list[i]
                 state_value: Tensor = state_value_decoder(encode)
                 assert state_value.dim() == 1
                 assert state_value.size(0) == batch_size
-                advantage += state_value.unsqueeze(1)
+                advantage += state_value.unsqueeze(1).expand_as(advantage)
 
             qs.append(advantage)
 
