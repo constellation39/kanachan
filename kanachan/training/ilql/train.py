@@ -213,6 +213,7 @@ def _train(
     target1_model: TensorDictModule,
     target2_model: TensorDictModule,
     reward_plugin: Path,
+    double_q_learning: bool,
     discount_factor: float,
     expectile: float,
     target_update_interval: int,
@@ -294,13 +295,11 @@ def _train(
                 data=data,
                 target_model=target1_model,
             )
-
             q2_target, q2_batch_mean = _get_q_target(
                 world_size=world_size,
                 data=data,
                 target_model=target2_model,
             )
-
             q_target = torch.minimum(q1_target, q2_target)
             q_target = q_target.detach().clone()
 
@@ -375,7 +374,8 @@ def _train(
             optimizer2.zero_grad()
 
             if (
-                batch_count
+                double_q_learning
+                and batch_count
                 % (gradient_accumulation_steps * target_update_interval)
                 == 0
             ):
@@ -386,7 +386,7 @@ def _train(
                     ):
                         _target_param.data *= 1.0 - target_update_rate
                         _target_param.data += (
-                            target_update_rate * _param.data.detach()
+                            target_update_rate * _param.data.detach().clone()
                         )
                     for _param, _target_param in zip(
                         source2_model.parameters(),
@@ -394,7 +394,7 @@ def _train(
                     ):
                         _target_param.data *= 1.0 - target_update_rate
                         _target_param.data += (
-                            target_update_rate * _param.data.detach()
+                            target_update_rate * _param.data.detach().clone()
                         )
 
             if local_rank == 0:
@@ -739,71 +739,72 @@ def _main(config: DictConfig) -> None:
             errmsg = f"{source2_v_decoder_snapshot_path}: Not a file."
             raise RuntimeError(errmsg)
 
-        target1_encoder_snapshot_path = (
-            config.initial_model_prefix / f"target1-encoder{infix}.pth"
-        )
-        assert target1_encoder_snapshot_path is not None
-        if not target1_encoder_snapshot_path.exists():
-            errmsg = f"{target1_encoder_snapshot_path}: Does not exist."
-            raise RuntimeError(errmsg)
-        if not target1_encoder_snapshot_path.is_file():
-            errmsg = f"{target1_encoder_snapshot_path}: Not a file."
-            raise RuntimeError(errmsg)
+        if config.double_q_learning:
+            target1_encoder_snapshot_path = (
+                config.initial_model_prefix / f"target1-encoder{infix}.pth"
+            )
+            assert target1_encoder_snapshot_path is not None
+            if not target1_encoder_snapshot_path.exists():
+                errmsg = f"{target1_encoder_snapshot_path}: Does not exist."
+                raise RuntimeError(errmsg)
+            if not target1_encoder_snapshot_path.is_file():
+                errmsg = f"{target1_encoder_snapshot_path}: Not a file."
+                raise RuntimeError(errmsg)
 
-        target1_q_decoder_snapshot_path = (
-            config.initial_model_prefix / f"target1-q-decoder{infix}.pth"
-        )
-        assert target1_q_decoder_snapshot_path is not None
-        if not target1_q_decoder_snapshot_path.exists():
-            errmsg = f"{target1_q_decoder_snapshot_path}: Does not exist."
-            raise RuntimeError(errmsg)
-        if not target1_q_decoder_snapshot_path.is_file():
-            errmsg = f"{target1_q_decoder_snapshot_path}: Not a file."
-            raise RuntimeError(errmsg)
+            target1_q_decoder_snapshot_path = (
+                config.initial_model_prefix / f"target1-q-decoder{infix}.pth"
+            )
+            assert target1_q_decoder_snapshot_path is not None
+            if not target1_q_decoder_snapshot_path.exists():
+                errmsg = f"{target1_q_decoder_snapshot_path}: Does not exist."
+                raise RuntimeError(errmsg)
+            if not target1_q_decoder_snapshot_path.is_file():
+                errmsg = f"{target1_q_decoder_snapshot_path}: Not a file."
+                raise RuntimeError(errmsg)
 
-        target1_v_decoder_snapshot_path = (
-            config.initial_model_prefix / f"target1-v-decoder{infix}.pth"
-        )
-        assert target1_v_decoder_snapshot_path is not None
-        if not target1_v_decoder_snapshot_path.exists():
-            errmsg = f"{target1_v_decoder_snapshot_path}: Does not exist."
-            raise RuntimeError(errmsg)
-        if not target1_v_decoder_snapshot_path.is_file():
-            errmsg = f"{target1_v_decoder_snapshot_path}: Not a file."
-            raise RuntimeError(errmsg)
+            target1_v_decoder_snapshot_path = (
+                config.initial_model_prefix / f"target1-v-decoder{infix}.pth"
+            )
+            assert target1_v_decoder_snapshot_path is not None
+            if not target1_v_decoder_snapshot_path.exists():
+                errmsg = f"{target1_v_decoder_snapshot_path}: Does not exist."
+                raise RuntimeError(errmsg)
+            if not target1_v_decoder_snapshot_path.is_file():
+                errmsg = f"{target1_v_decoder_snapshot_path}: Not a file."
+                raise RuntimeError(errmsg)
 
-        target2_encoder_snapshot_path = (
-            config.initial_model_prefix / f"target2-encoder{infix}.pth"
-        )
-        assert target2_encoder_snapshot_path is not None
-        if not target2_encoder_snapshot_path.exists():
-            errmsg = f"{target2_encoder_snapshot_path}: Does not exist."
-            raise RuntimeError(errmsg)
-        if not target2_encoder_snapshot_path.is_file():
-            errmsg = f"{target2_encoder_snapshot_path}: Not a file."
-            raise RuntimeError(errmsg)
+            target2_encoder_snapshot_path = (
+                config.initial_model_prefix / f"target2-encoder{infix}.pth"
+            )
+            assert target2_encoder_snapshot_path is not None
+            if not target2_encoder_snapshot_path.exists():
+                errmsg = f"{target2_encoder_snapshot_path}: Does not exist."
+                raise RuntimeError(errmsg)
+            if not target2_encoder_snapshot_path.is_file():
+                errmsg = f"{target2_encoder_snapshot_path}: Not a file."
+                raise RuntimeError(errmsg)
 
-        target2_q_decoder_snapshot_path = (
-            config.initial_model_prefix / f"target2-q-decoder{infix}.pth"
-        )
-        assert target2_q_decoder_snapshot_path is not None
-        if not target2_q_decoder_snapshot_path.exists():
-            errmsg = f"{target2_q_decoder_snapshot_path}: Does not exist."
-            raise RuntimeError(errmsg)
-        if not target2_q_decoder_snapshot_path.is_file():
-            errmsg = f"{target2_q_decoder_snapshot_path}: Not a file."
-            raise RuntimeError(errmsg)
+            target2_q_decoder_snapshot_path = (
+                config.initial_model_prefix / f"target2-q-decoder{infix}.pth"
+            )
+            assert target2_q_decoder_snapshot_path is not None
+            if not target2_q_decoder_snapshot_path.exists():
+                errmsg = f"{target2_q_decoder_snapshot_path}: Does not exist."
+                raise RuntimeError(errmsg)
+            if not target2_q_decoder_snapshot_path.is_file():
+                errmsg = f"{target2_q_decoder_snapshot_path}: Not a file."
+                raise RuntimeError(errmsg)
 
-        target2_v_decoder_snapshot_path = (
-            config.initial_model_prefix / f"target2-v-decoder{infix}.pth"
-        )
-        assert target2_v_decoder_snapshot_path is not None
-        if not target2_v_decoder_snapshot_path.exists():
-            errmsg = f"{target2_v_decoder_snapshot_path}: Does not exist."
-            raise RuntimeError(errmsg)
-        if not target2_v_decoder_snapshot_path.is_file():
-            errmsg = f"{target2_v_decoder_snapshot_path}: Not a file."
-            raise RuntimeError(errmsg)
+            target2_v_decoder_snapshot_path = (
+                config.initial_model_prefix / f"target2-v-decoder{infix}.pth"
+            )
+            assert target2_v_decoder_snapshot_path is not None
+            if not target2_v_decoder_snapshot_path.exists():
+                errmsg = f"{target2_v_decoder_snapshot_path}: Does not exist."
+                raise RuntimeError(errmsg)
+            if not target2_v_decoder_snapshot_path.is_file():
+                errmsg = f"{target2_v_decoder_snapshot_path}: Not a file."
+                raise RuntimeError(errmsg)
 
         optimizer1_snapshot_path = (
             config.initial_model_prefix / f"optimizer1{infix}.pth"
@@ -904,19 +905,36 @@ def _main(config: DictConfig) -> None:
 
     _config.optimizer.validate(config)
 
-    if config.target_update_interval <= 0:
-        errmsg = (
-            f"{config.target_update_interval}: "
-            "`target_update_interval` must be a positive integer."
-        )
-        raise RuntimeError(errmsg)
+    if config.double_q_learning:
+        if config.target_update_interval <= 0:
+            errmsg = (
+                f"{config.target_update_interval}: "
+                "`target_update_interval` must be a positive integer."
+            )
+            raise RuntimeError(errmsg)
+    else:
+        if config.target_update_interval != 0:
+            errmsg = (
+                f"{config.target_update_interval}: "
+                "`target_update_interval` must be 0 for the case where"
+                " double Q-learning is disabled."
+            )
+            raise RuntimeError(errmsg)
 
-    if config.target_update_rate <= 0.0 or config.target_update_rate > 1.0:
-        errmsg = (
-            f"{config.target_update_rate}: `target_update_rate` must be"
-            " a real value within the range (0.0, 1.0]."
-        )
-        raise RuntimeError(errmsg)
+    if config.double_q_learning:
+        if config.target_update_rate <= 0.0 or config.target_update_rate > 1.0:
+            errmsg = (
+                f"{config.target_update_rate}: `target_update_rate` must be"
+                " a real value within the range (0.0, 1.0]."
+            )
+            raise RuntimeError(errmsg)
+    else:
+        if config.target_update_rate != 0.0:
+            errmsg = (
+                f"{config.target_update_rate}: `target_update_rate` must be 0.0"
+                " for the case where double Q-learning is disabled."
+            )
+            raise RuntimeError(errmsg)
 
     if config.snapshot_interval < 0:
         errmsg = (
@@ -974,6 +992,7 @@ def _main(config: DictConfig) -> None:
                 logging.info("(Will not load optimizer)")
 
         logging.info("Reward plugin: %s", config.reward_plugin)
+        logging.info("Double Q-learning: %s", config.double_q_learning)
         logging.info("Discount factor: %f", config.discount_factor)
         logging.info("Expectile: %f", config.expectile)
         logging.info("V loss scaling: %E", config.v_loss_scaling)
@@ -994,11 +1013,12 @@ def _main(config: DictConfig) -> None:
 
         _config.optimizer.dump(config)
 
-        logging.info(
-            "Target update interval: %d",
-            config.target_update_interval,
-        )
-        logging.info("Target update rate: %f", config.target_update_rate)
+        if config.double_q_learning:
+            logging.info(
+                "Target update interval: %d",
+                config.target_update_interval,
+            )
+            logging.info("Target update rate: %f", config.target_update_rate)
 
         if config.initial_model_prefix is not None:
             logging.info(
@@ -1025,30 +1045,31 @@ def _main(config: DictConfig) -> None:
                 "Initial source 2 V decoder snapshot: %s",
                 source2_v_decoder_snapshot_path,
             )
-            logging.info(
-                "Initial target 1 encoder snapshot: %s",
-                source1_encoder_snapshot_path,
-            )
-            logging.info(
-                "Initial target 1 Q decoder snapshot: %s",
-                source1_q_decoder_snapshot_path,
-            )
-            logging.info(
-                "Initial target 1 V decoder snapshot: %s",
-                source1_v_decoder_snapshot_path,
-            )
-            logging.info(
-                "Initial target 2 encoder snapshot: %s",
-                source2_encoder_snapshot_path,
-            )
-            logging.info(
-                "Initial target 2 Q decoder snapshot: %s",
-                source2_q_decoder_snapshot_path,
-            )
-            logging.info(
-                "Initial target 2 V decoder snapshot: %s",
-                source2_v_decoder_snapshot_path,
-            )
+            if config.double_q_learning:
+                logging.info(
+                    "Initial target 1 encoder snapshot: %s",
+                    source1_encoder_snapshot_path,
+                )
+                logging.info(
+                    "Initial target 1 Q decoder snapshot: %s",
+                    source1_q_decoder_snapshot_path,
+                )
+                logging.info(
+                    "Initial target 1 V decoder snapshot: %s",
+                    source1_v_decoder_snapshot_path,
+                )
+                logging.info(
+                    "Initial target 2 encoder snapshot: %s",
+                    source2_encoder_snapshot_path,
+                )
+                logging.info(
+                    "Initial target 2 Q decoder snapshot: %s",
+                    source2_q_decoder_snapshot_path,
+                )
+                logging.info(
+                    "Initial target 2 V decoder snapshot: %s",
+                    source2_v_decoder_snapshot_path,
+                )
             if optimizer1_snapshot_path is not None:
                 logging.info(
                     "Initial optimizer 1 snapshot: %s",
@@ -1215,131 +1236,147 @@ def _main(config: DictConfig) -> None:
             broadcast(_param.data, src=0)
         source2_model.to(device="cpu")
 
-    target1_encoder = Encoder(
-        position_encoder=config.encoder.position_encoder,
-        dimension=config.encoder.dimension,
-        num_heads=config.encoder.num_heads,
-        dim_feedforward=config.encoder.dim_feedforward,
-        activation_function=config.encoder.activation_function,
-        dropout=config.encoder.dropout,
-        layer_normalization=config.encoder.layer_normalization,
-        num_layers=config.encoder.num_layers,
-        checkpointing=config.checkpointing,
-        device=torch.device("cpu"),
-        dtype=dtype,
-    )
-    target1_encoder_tdm = TensorDictModule(
-        target1_encoder,
-        in_keys=["sparse", "numeric", "progression", "candidates"],
-        out_keys=["encode"],
-    )
-    target1_q_decoder = Decoder(
-        input_dimension=config.encoder.dimension,
-        dimension=config.decoder.dimension,
-        activation_function=config.decoder.activation_function,
-        dropout=config.decoder.dropout,
-        layer_normalization=config.decoder.layer_normalization,
-        num_layers=config.decoder.num_layers,
-        output_mode="candidates",
-        noise_init_std=None,
-        device=torch.device("cpu"),
-        dtype=dtype,
-    )
-    target1_q_decoder_tdm = TensorDictModule(
-        target1_q_decoder,
-        in_keys=["encode"],
-        out_keys=["action_value"],
-    )
-    target1_v_decoder = Decoder(
-        input_dimension=config.encoder.dimension,
-        dimension=config.decoder.dimension,
-        activation_function=config.decoder.activation_function,
-        dropout=config.decoder.dropout,
-        layer_normalization=config.decoder.layer_normalization,
-        num_layers=config.decoder.num_layers,
-        output_mode="state",
-        noise_init_std=None,
-        device=torch.device("cpu"),
-        dtype=dtype,
-    )
-    target1_v_decoder_tdm = TensorDictModule(
-        target1_v_decoder,
-        in_keys=["encode"],
-        out_keys=["state_value"],
-    )
-    target1_model = TensorDictSequential(
-        target1_encoder_tdm,
-        target1_q_decoder_tdm,
-        target1_v_decoder_tdm,
-    )
-    with torch.no_grad():
-        for _param, _target_param in zip(
-            source1_model.parameters(), target1_model.parameters()
-        ):
-            _target_param.data = _param.data.detach().clone()
+    if config.double_q_learning:
+        target1_encoder = Encoder(
+            position_encoder=config.encoder.position_encoder,
+            dimension=config.encoder.dimension,
+            num_heads=config.encoder.num_heads,
+            dim_feedforward=config.encoder.dim_feedforward,
+            activation_function=config.encoder.activation_function,
+            dropout=config.encoder.dropout,
+            layer_normalization=config.encoder.layer_normalization,
+            num_layers=config.encoder.num_layers,
+            checkpointing=config.checkpointing,
+            device=torch.device("cpu"),
+            dtype=dtype,
+        )
+        target1_encoder_tdm = TensorDictModule(
+            target1_encoder,
+            in_keys=["sparse", "numeric", "progression", "candidates"],
+            out_keys=["encode"],
+        )
+        target1_q_decoder = Decoder(
+            input_dimension=config.encoder.dimension,
+            dimension=config.decoder.dimension,
+            activation_function=config.decoder.activation_function,
+            dropout=config.decoder.dropout,
+            layer_normalization=config.decoder.layer_normalization,
+            num_layers=config.decoder.num_layers,
+            output_mode="candidates",
+            noise_init_std=None,
+            device=torch.device("cpu"),
+            dtype=dtype,
+        )
+        target1_q_decoder_tdm = TensorDictModule(
+            target1_q_decoder,
+            in_keys=["encode"],
+            out_keys=["action_value"],
+        )
+        target1_v_decoder = Decoder(
+            input_dimension=config.encoder.dimension,
+            dimension=config.decoder.dimension,
+            activation_function=config.decoder.activation_function,
+            dropout=config.decoder.dropout,
+            layer_normalization=config.decoder.layer_normalization,
+            num_layers=config.decoder.num_layers,
+            output_mode="state",
+            noise_init_std=None,
+            device=torch.device("cpu"),
+            dtype=dtype,
+        )
+        target1_v_decoder_tdm = TensorDictModule(
+            target1_v_decoder,
+            in_keys=["encode"],
+            out_keys=["state_value"],
+        )
+        target1_model = TensorDictSequential(
+            target1_encoder_tdm,
+            target1_q_decoder_tdm,
+            target1_v_decoder_tdm,
+        )
+        with torch.no_grad():
+            for _param, _target_param in zip(
+                source1_model.parameters(), target1_model.parameters()
+            ):
+                _target_param.data = _param.data.detach().clone()
 
-    target2_encoder = Encoder(
-        position_encoder=config.encoder.position_encoder,
-        dimension=config.encoder.dimension,
-        num_heads=config.encoder.num_heads,
-        dim_feedforward=config.encoder.dim_feedforward,
-        activation_function=config.encoder.activation_function,
-        dropout=config.encoder.dropout,
-        layer_normalization=config.encoder.layer_normalization,
-        num_layers=config.encoder.num_layers,
-        checkpointing=config.checkpointing,
-        device=torch.device("cpu"),
-        dtype=dtype,
-    )
-    target2_encoder_tdm = TensorDictModule(
-        target2_encoder,
-        in_keys=["sparse", "numeric", "progression", "candidates"],
-        out_keys=["encode"],
-    )
-    target2_q_decoder = Decoder(
-        input_dimension=config.encoder.dimension,
-        dimension=config.decoder.dimension,
-        activation_function=config.decoder.activation_function,
-        dropout=config.decoder.dropout,
-        layer_normalization=config.decoder.layer_normalization,
-        num_layers=config.decoder.num_layers,
-        output_mode="candidates",
-        noise_init_std=None,
-        device=torch.device("cpu"),
-        dtype=dtype,
-    )
-    target2_q_decoder_tdm = TensorDictModule(
-        target2_q_decoder,
-        in_keys=["encode"],
-        out_keys=["action_value"],
-    )
-    target2_v_decoder = Decoder(
-        input_dimension=config.encoder.dimension,
-        dimension=config.decoder.dimension,
-        activation_function=config.decoder.activation_function,
-        dropout=config.decoder.dropout,
-        layer_normalization=config.decoder.layer_normalization,
-        num_layers=config.decoder.num_layers,
-        output_mode="state",
-        noise_init_std=None,
-        device=torch.device("cpu"),
-        dtype=dtype,
-    )
-    target2_v_decoder_tdm = TensorDictModule(
-        target2_v_decoder,
-        in_keys=["encode"],
-        out_keys=["state_value"],
-    )
-    target2_model = TensorDictSequential(
-        target2_encoder_tdm,
-        target2_q_decoder_tdm,
-        target2_v_decoder_tdm,
-    )
-    with torch.no_grad():
-        for _param, _target_param in zip(
-            source2_model.parameters(), target2_model.parameters()
-        ):
-            _target_param.data = _param.data.detach().clone()
+        target2_encoder = Encoder(
+            position_encoder=config.encoder.position_encoder,
+            dimension=config.encoder.dimension,
+            num_heads=config.encoder.num_heads,
+            dim_feedforward=config.encoder.dim_feedforward,
+            activation_function=config.encoder.activation_function,
+            dropout=config.encoder.dropout,
+            layer_normalization=config.encoder.layer_normalization,
+            num_layers=config.encoder.num_layers,
+            checkpointing=config.checkpointing,
+            device=torch.device("cpu"),
+            dtype=dtype,
+        )
+        target2_encoder_tdm = TensorDictModule(
+            target2_encoder,
+            in_keys=["sparse", "numeric", "progression", "candidates"],
+            out_keys=["encode"],
+        )
+        target2_q_decoder = Decoder(
+            input_dimension=config.encoder.dimension,
+            dimension=config.decoder.dimension,
+            activation_function=config.decoder.activation_function,
+            dropout=config.decoder.dropout,
+            layer_normalization=config.decoder.layer_normalization,
+            num_layers=config.decoder.num_layers,
+            output_mode="candidates",
+            noise_init_std=None,
+            device=torch.device("cpu"),
+            dtype=dtype,
+        )
+        target2_q_decoder_tdm = TensorDictModule(
+            target2_q_decoder,
+            in_keys=["encode"],
+            out_keys=["action_value"],
+        )
+        target2_v_decoder = Decoder(
+            input_dimension=config.encoder.dimension,
+            dimension=config.decoder.dimension,
+            activation_function=config.decoder.activation_function,
+            dropout=config.decoder.dropout,
+            layer_normalization=config.decoder.layer_normalization,
+            num_layers=config.decoder.num_layers,
+            output_mode="state",
+            noise_init_std=None,
+            device=torch.device("cpu"),
+            dtype=dtype,
+        )
+        target2_v_decoder_tdm = TensorDictModule(
+            target2_v_decoder,
+            in_keys=["encode"],
+            out_keys=["state_value"],
+        )
+        target2_model = TensorDictSequential(
+            target2_encoder_tdm,
+            target2_q_decoder_tdm,
+            target2_v_decoder_tdm,
+        )
+        with torch.no_grad():
+            for _param, _target_param in zip(
+                source2_model.parameters(), target2_model.parameters()
+            ):
+                _target_param.data = _param.data.detach().clone()
+    else:
+        target1_encoder = source1_encoder
+        target1_encoder_tdm = source1_encoder_tdm
+        target1_q_decoder = source1_q_decoder
+        target1_q_decoder_tdm = source1_q_decoder_tdm
+        target1_v_decoder = source1_v_decoder
+        target1_v_decoder_tdm = source1_v_decoder_tdm
+        target1_model = source1_model
+        target2_encoder = source2_encoder
+        target2_encoder_tdm = source2_encoder_tdm
+        target2_q_decoder = source2_q_decoder
+        target2_q_decoder_tdm = source2_q_decoder_tdm
+        target2_v_decoder = source2_v_decoder
+        target2_v_decoder_tdm = source2_v_decoder_tdm
+        target2_model = source2_model
 
     model_to_save = TwinQActor(target1_model, target2_model)
     model_to_save_tdm = TensorDictModule(
@@ -1358,11 +1395,15 @@ def _main(config: DictConfig) -> None:
         encoder_state_dict = torch.load(
             config.encoder.load_from,
             map_location="cpu",
+            weights_only=True,
         )
         source1_encoder.load_state_dict(encoder_state_dict)
         source2_encoder.load_state_dict(encoder_state_dict)
-        target1_encoder.load_state_dict(encoder_state_dict)
-        target2_encoder.load_state_dict(encoder_state_dict)
+        if config.double_q_learning:
+            assert target1_encoder is not None
+            assert target2_encoder is not None
+            target1_encoder.load_state_dict(encoder_state_dict)
+            target2_encoder.load_state_dict(encoder_state_dict)
 
     if config.initial_model_prefix is not None:
         assert config.encoder.load_from is None
@@ -1372,95 +1413,137 @@ def _main(config: DictConfig) -> None:
         assert source2_encoder_snapshot_path is not None
         assert source2_q_decoder_snapshot_path is not None
         assert source2_v_decoder_snapshot_path is not None
-        assert target1_encoder_snapshot_path is not None
-        assert target1_q_decoder_snapshot_path is not None
-        assert target1_v_decoder_snapshot_path is not None
-        assert target2_encoder_snapshot_path is not None
-        assert target2_q_decoder_snapshot_path is not None
-        assert target2_v_decoder_snapshot_path is not None
+        if config.double_q_learning:
+            assert target1_encoder_snapshot_path is not None
+            assert target1_q_decoder_snapshot_path is not None
+            assert target1_v_decoder_snapshot_path is not None
+            assert target2_encoder_snapshot_path is not None
+            assert target2_q_decoder_snapshot_path is not None
+            assert target2_v_decoder_snapshot_path is not None
 
         source1_encoder_state_dict = torch.load(
             source1_encoder_snapshot_path,
             map_location="cpu",
+            weights_only=True,
         )
         source1_encoder.load_state_dict(source1_encoder_state_dict)
         source1_q_decoder_state_dict = torch.load(
             source1_q_decoder_snapshot_path,
             map_location="cpu",
+            weights_only=True,
         )
         source1_q_decoder.load_state_dict(source1_q_decoder_state_dict)
         source1_v_decoder_state_dict = torch.load(
             source1_v_decoder_snapshot_path,
             map_location="cpu",
+            weights_only=True,
         )
         source1_v_decoder.load_state_dict(source1_v_decoder_state_dict)
 
         source2_encoder_state_dict = torch.load(
             source2_encoder_snapshot_path,
             map_location="cpu",
+            weights_only=True,
         )
         source2_encoder.load_state_dict(source2_encoder_state_dict)
         source2_q_decoder_state_dict = torch.load(
             source2_q_decoder_snapshot_path,
             map_location="cpu",
+            weights_only=True,
         )
         source2_q_decoder.load_state_dict(source2_q_decoder_state_dict)
         source2_v_decoder_state_dict = torch.load(
             source2_v_decoder_snapshot_path,
             map_location="cpu",
+            weights_only=True,
         )
         source2_v_decoder.load_state_dict(source2_v_decoder_state_dict)
 
-        target1_encoder_state_dict = torch.load(
-            target1_encoder_snapshot_path,
-            map_location="cpu",
-        )
-        target1_encoder.load_state_dict(target1_encoder_state_dict)
-        target1_q_decoder_state_dict = torch.load(
-            target1_q_decoder_snapshot_path,
-            map_location="cpu",
-        )
-        target1_q_decoder.load_state_dict(target1_q_decoder_state_dict)
-        target1_v_decoder_state_dict = torch.load(
-            target1_v_decoder_snapshot_path,
-            map_location="cpu",
-        )
-        target1_v_decoder.load_state_dict(target1_v_decoder_state_dict)
+        if config.double_q_learning:
+            assert target1_encoder_snapshot_path is not None
+            assert target1_encoder is not None
+            assert target1_q_decoder_snapshot_path is not None
+            assert target1_q_decoder is not None
+            assert target1_v_decoder_snapshot_path is not None
+            assert target1_v_decoder is not None
+            assert target2_encoder_snapshot_path is not None
+            assert target2_encoder is not None
+            assert target2_q_decoder_snapshot_path is not None
+            assert target2_q_decoder is not None
+            assert target2_v_decoder_snapshot_path is not None
+            assert target2_v_decoder is not None
+            target1_encoder_state_dict = torch.load(
+                target1_encoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            target1_encoder.load_state_dict(target1_encoder_state_dict)
+            target1_q_decoder_state_dict = torch.load(
+                target1_q_decoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            target1_q_decoder.load_state_dict(target1_q_decoder_state_dict)
+            target1_v_decoder_state_dict = torch.load(
+                target1_v_decoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            target1_v_decoder.load_state_dict(target1_v_decoder_state_dict)
 
-        target2_encoder_state_dict = torch.load(
-            target2_encoder_snapshot_path,
-            map_location="cpu",
-        )
-        target2_encoder.load_state_dict(target2_encoder_state_dict)
-        target2_q_decoder_state_dict = torch.load(
-            target2_q_decoder_snapshot_path,
-            map_location="cpu",
-        )
-        target2_q_decoder.load_state_dict(target2_q_decoder_state_dict)
-        target2_v_decoder_state_dict = torch.load(
-            target2_v_decoder_snapshot_path,
-            map_location="cpu",
-        )
-        target2_v_decoder.load_state_dict(target2_v_decoder_state_dict)
+            target2_encoder_state_dict = torch.load(
+                target2_encoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            target2_encoder.load_state_dict(target2_encoder_state_dict)
+            target2_q_decoder_state_dict = torch.load(
+                target2_q_decoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            target2_q_decoder.load_state_dict(target2_q_decoder_state_dict)
+            target2_v_decoder_state_dict = torch.load(
+                target2_v_decoder_snapshot_path,
+                map_location="cpu",
+                weights_only=True,
+            )
+            target2_v_decoder.load_state_dict(target2_v_decoder_state_dict)
 
         if optimizer1_snapshot_path is not None:
             assert lr_scheduler1_snapshot_path is not None
             assert lr_scheduler1 is not None
             optimizer1.load_state_dict(
-                torch.load(optimizer1_snapshot_path, map_location="cpu")
+                torch.load(
+                    optimizer1_snapshot_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
             )
             lr_scheduler1.load_state_dict(
-                torch.load(lr_scheduler1_snapshot_path, map_location="cpu")
+                torch.load(
+                    lr_scheduler1_snapshot_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
             )
 
         if optimizer2_snapshot_path is not None:
             assert lr_scheduler2_snapshot_path is not None
             assert lr_scheduler2 is not None
             optimizer2.load_state_dict(
-                torch.load(optimizer2_snapshot_path, map_location="cpu")
+                torch.load(
+                    optimizer2_snapshot_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
             )
             lr_scheduler2.load_state_dict(
-                torch.load(lr_scheduler2_snapshot_path, map_location="cpu")
+                torch.load(
+                    lr_scheduler2_snapshot_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
             )
 
     source1_model.requires_grad_(True)
@@ -1477,13 +1560,14 @@ def _main(config: DictConfig) -> None:
         source2_model = DistributedDataParallel(source2_model)
         source2_model = nn.SyncBatchNorm.convert_sync_batchnorm(source2_model)
 
-    target1_model.requires_grad_(False)
-    target1_model.eval()
-    target1_model.to(device=device, dtype=dtype)
+    if config.double_q_learning:
+        target1_model.requires_grad_(False)
+        target1_model.eval()
+        target1_model.to(device=device, dtype=dtype)
 
-    target2_model.requires_grad_(False)
-    target2_model.eval()
-    target2_model.to(device=device, dtype=dtype)
+        target2_model.requires_grad_(False)
+        target2_model.eval()
+        target2_model.to(device=device, dtype=dtype)
 
     snapshots_path = output_prefix / "snapshots"
 
@@ -1516,30 +1600,37 @@ def _main(config: DictConfig) -> None:
             source2_v_decoder.state_dict(),
             snapshots_path / f"source2-v-decoder{infix}.pth",
         )
-        torch.save(
-            target1_encoder.state_dict(),
-            snapshots_path / f"target1-encoder{infix}.pth",
-        )
-        torch.save(
-            target1_q_decoder.state_dict(),
-            snapshots_path / f"target1-q-decoder{infix}.pth",
-        )
-        torch.save(
-            target1_v_decoder.state_dict(),
-            snapshots_path / f"target1-v-decoder{infix}.pth",
-        )
-        torch.save(
-            target2_encoder.state_dict(),
-            snapshots_path / f"target2-encoder{infix}.pth",
-        )
-        torch.save(
-            target2_q_decoder.state_dict(),
-            snapshots_path / f"target2-q-decoder{infix}.pth",
-        )
-        torch.save(
-            target2_v_decoder.state_dict(),
-            snapshots_path / f"target2-v-decoder{infix}.pth",
-        )
+        if config.double_q_learning:
+            assert target1_encoder is not None
+            assert target1_q_decoder is not None
+            assert target1_v_decoder is not None
+            assert target2_encoder is not None
+            assert target2_q_decoder is not None
+            assert target2_v_decoder is not None
+            torch.save(
+                target1_encoder.state_dict(),
+                snapshots_path / f"target1-encoder{infix}.pth",
+            )
+            torch.save(
+                target1_q_decoder.state_dict(),
+                snapshots_path / f"target1-q-decoder{infix}.pth",
+            )
+            torch.save(
+                target1_v_decoder.state_dict(),
+                snapshots_path / f"target1-v-decoder{infix}.pth",
+            )
+            torch.save(
+                target2_encoder.state_dict(),
+                snapshots_path / f"target2-encoder{infix}.pth",
+            )
+            torch.save(
+                target2_q_decoder.state_dict(),
+                snapshots_path / f"target2-q-decoder{infix}.pth",
+            )
+            torch.save(
+                target2_v_decoder.state_dict(),
+                snapshots_path / f"target2-v-decoder{infix}.pth",
+            )
         torch.save(
             optimizer1.state_dict(), snapshots_path / f"optimizer1{infix}.pth"
         )
@@ -1772,6 +1863,7 @@ def _main(config: DictConfig) -> None:
             target1_model=target1_model,
             target2_model=target2_model,
             reward_plugin=config.reward_plugin,
+            double_q_learning=config.double_q_learning,
             discount_factor=config.discount_factor,
             expectile=config.expectile,
             target_update_interval=config.target_update_interval,
