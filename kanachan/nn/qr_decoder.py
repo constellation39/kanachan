@@ -121,7 +121,9 @@ class QRDecoder(nn.Module):
         assert theta.size(0) == batch_size
         assert theta.size(1) == MAX_NUM_ACTION_CANDIDATES
         assert theta.size(2) == num_qr_intervals
-        theta = theta.masked_fill(mask.unsqueeze(2), -math.inf)
+        theta = theta.masked_fill(
+            mask.unsqueeze(2).expand_as(theta), -math.inf
+        )
 
         return theta
 
