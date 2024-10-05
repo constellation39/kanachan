@@ -282,7 +282,6 @@ def _train(
     }
     grad_scaler = GradScaler("cuda", enabled=is_amp_enabled)
 
-    num_consumed_samples = 0
     batch_count = 0
 
     for data in data_loader:
@@ -332,7 +331,6 @@ def _train(
         )
 
         num_samples += batch_size * world_size
-        num_consumed_samples += batch_size * world_size
         batch_count += 1
 
         if batch_count % gradient_accumulation_steps == 0:
